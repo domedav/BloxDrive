@@ -10,3 +10,4 @@ auth.json
 /bloxdrive_mnt/
 /bloxdrive_spool/
 release.sh
+.coverage
