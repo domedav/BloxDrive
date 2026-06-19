@@ -9,3 +9,4 @@ auth.json
 /tests/*.bin
 /bloxdrive_mnt/
 /bloxdrive_spool/
+release.sh
