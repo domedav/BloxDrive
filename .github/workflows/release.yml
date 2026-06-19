@@ -18,18 +18,18 @@ jobs:
 
       - name: Create Zip Archive
         run: |
-          zip -r BloxDrive-${{ github.ref_name }}.zip . -x "*.git*" ".github*"
+          zip -r /tmp/BloxDrive-${{ github.ref_name }}.zip . -x "*.git*" ".github*"
           
       - name: Create Tar Archive
         run: |
-          tar -czvf BloxDrive-${{ github.ref_name }}.tar.gz --exclude=.git --exclude=.github .
+          tar -czvf /tmp/BloxDrive-${{ github.ref_name }}.tar.gz --exclude=.git --exclude=.github .
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            BloxDrive-${{ github.ref_name }}.zip
-            BloxDrive-${{ github.ref_name }}.tar.gz
+            /tmp/BloxDrive-${{ github.ref_name }}.zip
+            /tmp/BloxDrive-${{ github.ref_name }}.tar.gz
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
