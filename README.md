@@ -32,32 +32,34 @@ Read the `SETUP.md` file for full installation instructions.
 - MariaDB or MySQL (or TiDB for horizontal scaling)
 - Python Packages: Install via `pip install -r requirements.txt`
 
-## Architecture
+## 🌍 Sync Across Multiple Computers (Cloud Database)
 
-- **Encoder (`encoder.py`)**: Converts raw binary data into valid PNG pixels. It ensures the resulting image is under the Roblox 20MB limit and 8000x8000 resolution limit.
-- **Database (`db.py`)**: Manages the mapping of filenames to their chunk sequences, Roblox Asset IDs, and resolved CDN URLs.
-- **Roblox Client (`roblox.py`)**: Handles the Long-Running Operations (LRO) required to upload assets via the Open Cloud API. It enforces a strict 55 uploads/minute local rate limit to avoid 429 responses.
-- **FUSE App (`fuse_app.py` & `main.py`)**: Mounts the database contents as a read-only filesystem. When a file is accessed, it calculates which chunk contains the byte offset and fetches the corresponding image from Roblox's CDN (`rbxcdn.com`).
+By default, BloxDrive uses a local MySQL/MariaDB database to track your files. However, if you want to access your virtual hard drive from **multiple computers at the same time** (just like Google Drive), you can use a free Cloud Database like **TiDB Serverless**!
 
-## Migration to TiDB
+1. Create a free MySQL-compatible database at [TiDB Serverless](https://tidbcloud.com/).
+2. Grab your connection credentials.
+3. Paste them into your `settings.json`:
+   ```json
+   "DB_HOST": "gateway01.us-east-1.prod.aws.tidbcloud.com",
+   "DB_PORT": 4000,
+   "DB_USER": "your_user.root",
+   "DB_PASS": "your_password"
+   ```
+4. Copy your `settings.json` file to your other computers. They will now all instantly sync your files!
 
-BloxDrive uses standard MySQL syntax for its metadata storage. If your dataset grows too large for a local MariaDB instance, you can seamlessly migrate to **TiDB** (a distributed SQL database that speaks the MySQL protocol).
+## 🛠️ Usage
 
-To migrate:
-1. Spin up a TiDB cluster (e.g., using TiDB Serverless).
-2. Get the connection string (Host, Port, User, Password).
-3. Update `settings.json` with the TiDB credentials.
-4. The application will automatically create the required tables on the first run.
-
-## Usage
-
-1. **Configure:** Ensure `settings.json` has your Database credentials, and `config.py` has your `ROBLOX_API_KEY` and `ROBLOX_USER_ID`.
-2. **Start the Engine:**
+1. **Start the Engine:**
    ```bash
    ./bloxdrive.sh start
    ```
+   *(On first run, it will interactively ask for your Roblox API Key and User ID!)*
+
+2. **Access your Files:**
+   Open `/tmp/bloxdrive_mnt` in your computer's file manager and start dragging and dropping files!
+
 3. **Start the Web UI (Optional):**
    ```bash
    ./bloxdrive.sh web
    ```
-4. **Access Files:** You can now open `/tmp/bloxdrive_mnt` in your file manager, or navigate to the Web UI to stream files directly to your phone!
+   Navigate to the provided IP address to stream your encrypted files directly to your phone.
