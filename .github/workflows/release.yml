@@ -1,0 +1,35 @@
+name: Create Release Archives
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    name: Build Release Archives
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Create Zip Archive
+        run: |
+          zip -r BloxDrive-${{ github.ref_name }}.zip . -x "*.git*" ".github*"
+          
+      - name: Create Tar Archive
+        run: |
+          tar -czvf BloxDrive-${{ github.ref_name }}.tar.gz --exclude=.git --exclude=.github .
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            BloxDrive-${{ github.ref_name }}.zip
+            BloxDrive-${{ github.ref_name }}.tar.gz
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
