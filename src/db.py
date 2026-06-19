@@ -148,6 +148,11 @@ class DatabaseManager:
             cursor.execute("DELETE FROM files WHERE filename = %s", (filename,))
             conn.commit()
 
+    def delete_chunks(self, file_id):
+        with closing(self.get_connection()) as conn, closing(conn.cursor()) as cursor:
+            cursor.execute("DELETE FROM chunks WHERE file_id = %s", (file_id,))
+            conn.commit()
+
     def delete_folder(self, folder_path):
         with closing(self.get_connection()) as conn, closing(conn.cursor()) as cursor:
             prefix = folder_path + "/"

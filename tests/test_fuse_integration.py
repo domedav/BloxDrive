@@ -31,6 +31,7 @@ def test_fuse_read_write():
     
     # 3. Test Release (Triggers Upload)
     print("FUSE Release (Uploading to Roblox...)")
+    fuse.flush(test_path, fh)
     fuse.release(test_path, fh)
     print("FUSE Release (Upload): PASS")
     
@@ -53,6 +54,7 @@ def test_fuse_read_write():
     assert read_data == test_data[offset:offset+length], "Data corruption! Read data does not match original written data at offset."
     print("FUSE Streaming Read (Offset Access): PASS")
     
+    fuse.flush(test_path, fh_read)
     fuse.release(test_path, fh_read)
     
     # 6. Test Unlink (Delete)

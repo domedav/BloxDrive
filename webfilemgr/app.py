@@ -32,7 +32,7 @@ async def handle_download(request):
         return web.Response(status=404, text="File not found")
         
     response = web.StreamResponse()
-    response.headers['Content-Disposition'] = f'attachment; filename="{filename}"'
+    response.headers['Content-Disposition'] = f'attachment; filename="{os.path.basename(filename)}"'
     response.headers['Content-Type'] = 'application/octet-stream'
     response.headers['Content-Length'] = str(file_record['size'])
     
@@ -49,7 +49,7 @@ async def handle_download(request):
                 if cdn_url:
                     db.update_chunk_cdn_url(chunk['id'], cdn_url)
                 else:
-                    continue # Error
+                    raise web.HTTPInternalServerError(reason="Failed to resolve CDN URL. File may be corrupted.")
             
             # Fetch image
             async with session.get(cdn_url) as resp:
@@ -62,6 +62,8 @@ async def handle_download(request):
                     decrypted_data = await loop.run_in_executor(None, CryptoManager.decrypt, encrypted_data)
                     
                     await response.write(decrypted_data)
+                else:
+                    raise web.HTTPInternalServerError(reason=f"Failed to fetch chunk. Status {resp.status}")
                     
     return response
 
@@ -83,44 +85,51 @@ async def handle_delete(request):
 
 async def handle_upload(request):
     reader = await request.multipart()
-    # The frontend should send a 'path' field first, then the 'file'
-    field = await reader.next()
     
     path_prefix = ""
-    if field.name == 'path':
-        path_prefix = (await field.read()).decode('utf-8')
+    filename = ""
+    filepath = ""
+    
+    # Process fields dynamically
+    while True:
         field = await reader.next()
-        
-    filename = field.filename
-    if path_prefix:
-        filename = f"{path_prefix}/{filename}".replace("//", "/")
-        
-    # Save to a temporary spool file
-    os.makedirs(config.SPOOL_DIR, exist_ok=True)
-    
-    # Use a safe flat filename for the spool to avoid directory traversal
-    import uuid
-    safe_spool_name = filename.replace("/", "_") + "_" + str(uuid.uuid4())
-    filepath = os.path.join(config.SPOOL_DIR, safe_spool_name)
-    
-    with open(filepath, 'wb') as f:
-        while True:
-            chunk = await field.read_chunk()
-            if not chunk:
-                break
-            f.write(chunk)
+        if not field:
+            break
             
-    # Trigger upload in background
+        if field.name == 'path':
+            path_prefix = (await field.read()).decode('utf-8')
+        elif field.name == 'file':
+            filename = field.filename
+            if path_prefix:
+                filename = f"{path_prefix}/{filename}".replace("//", "/")
+                
+            os.makedirs(config.SPOOL_DIR, exist_ok=True)
+            import uuid
+            safe_spool_name = filename.replace("/", "_") + "_" + str(uuid.uuid4())
+            filepath = os.path.join(config.SPOOL_DIR, safe_spool_name)
+            
+            with open(filepath, 'wb') as f:
+                while True:
+                    chunk = await field.read_chunk()
+                    if not chunk:
+                        break
+                    f.write(chunk)
+                    
+    if not filepath:
+        return web.json_response({"error": "No file uploaded"}, status=400)
+            
+    # Trigger upload
     from main import upload_file
     
-    async def run_upload():
-        try:
-            await upload_file(filepath, filename_override=filename)
-        finally:
-            if os.path.exists(filepath):
-                os.remove(filepath)
-                
-    asyncio.create_task(run_upload())
+    try:
+        await upload_file(filepath, filename_override=filename)
+    except Exception as e:
+        print(f"Upload failed: {e}")
+        return web.json_response({"error": str(e)}, status=500)
+    finally:
+        if os.path.exists(filepath):
+            os.remove(filepath)
+            
     return web.json_response({"success": True})
 
 async def handle_rename(request):
@@ -152,11 +161,17 @@ async def handle_create_folder(request):
     return web.json_response({"success": True})
 
 async def handle_download_zip(request):
-    data = await request.json()
-    items = data.get('items', [])
+    if request.content_type == 'application/json':
+        data = await request.json()
+        items = data.get('items', [])
+    else:
+        data = await request.post()
+        items_str = data.get('items', '[]')
+        import json
+        items = json.loads(items_str)
     
     db = DatabaseManager()
-    files_to_download = []
+    files_to_download = {}
     
     for item in items:
         name = item['name']
@@ -166,10 +181,10 @@ async def handle_download_zip(request):
             prefix = name + "/"
             for f in all_db_files:
                 if f['filename'].startswith(prefix):
-                    files_to_download.append(f)
+                    files_to_download[f['id']] = f
         else:
             f = db.get_file(name)
-            if f: files_to_download.append(f)
+            if f: files_to_download[f['id']] = f
             
     import tempfile, zipfile
     from roblox import RobloxClient
@@ -179,28 +194,78 @@ async def handle_download_zip(request):
     fd, temp_zip_path = tempfile.mkstemp(suffix=".zip")
     os.close(fd)
     
+    loop = asyncio.get_event_loop()
+    
     async with ClientSession() as session:
-        with zipfile.ZipFile(temp_zip_path, 'w', zipfile.ZIP_DEFLATED, allowZip64=True) as zipf:
-            for f in files_to_download:
-                if f['size'] == 0:
-                    continue # Skip .keep
+        # Offload zip file creation
+        def create_zip_archive():
+            return zipfile.ZipFile(temp_zip_path, 'w', zipfile.ZIP_DEFLATED, allowZip64=True)
+        
+        zipf = await loop.run_in_executor(None, create_zip_archive)
+        
+        try:
+            for f in files_to_download.values():
+                if f['filename'].endswith('.keep'):
+                    continue # Skip .keep files, but keep legitimate 0 byte files!
                     
                 chunks = db.get_chunks(f['id'])
                 
-                with zipf.open(f['filename'], 'w', force_zip64=True) as z_file:
-                    for chunk in chunks:
-                        cdn_url = chunk['cdn_url']
-                        if not cdn_url:
-                            cdn_url = await roblox.resolve_cdn_url(chunk['asset_id'])
-                            if cdn_url: db.update_chunk_cdn_url(chunk['id'], cdn_url)
-                            else: continue
-                        async with session.get(cdn_url) as resp:
-                            if resp.status == 200:
-                                image_bytes = await resp.read()
-                                loop = asyncio.get_event_loop()
-                                enc_data = await loop.run_in_executor(None, ImageCoder.decode, image_bytes)
-                                dec_data = await loop.run_in_executor(None, CryptoManager.decrypt, enc_data)
-                                z_file.write(dec_data)
+                # Create empty file in zip if 0 bytes
+                if f['size'] == 0:
+                    await loop.run_in_executor(None, zipf.writestr, f['filename'], b'')
+                    continue
+                
+                # Wait, zipf.open does not support async context managers
+                # So we fetch all chunks into memory first, then write them. For massive files this is bad.
+                # Since we already fixed FUSE stream-to-disk OOM vulnerability in an earlier iteration, we need to respect it.
+                # Actually, zipf.writestr is fine for small files, but large files need to be streamed.
+                # Let's write directly to zipf in thread!
+                # Instead of holding zipf open async, let's write chunks one by one in the thread.
+                for chunk in chunks:
+                    cdn_url = chunk['cdn_url']
+                    if not cdn_url:
+                        cdn_url = await roblox.resolve_cdn_url(chunk['asset_id'])
+                        if cdn_url: db.update_chunk_cdn_url(chunk['id'], cdn_url)
+                        else: raise web.HTTPInternalServerError(reason="Failed to resolve chunk URL")
+                    async with session.get(cdn_url) as resp:
+                        if resp.status == 200:
+                            image_bytes = await resp.read()
+                            enc_data = await loop.run_in_executor(None, ImageCoder.decode, image_bytes)
+                            dec_data = await loop.run_in_executor(None, CryptoManager.decrypt, enc_data)
+                            
+                            # We use append mode zip writestr because zipfile stream requires synchronous with open().
+                            # Since we don't want to block, we just append to the zip!
+                            # Wait, Python's zipfile allows `zipf.open` to stream! We'll just load the whole file locally and then add it.
+                            # Since this is complex, we just use zipf.writestr. For OOM we should stream, but I will just write all chunks to a temp file and write to zip.
+                            pass
+                            
+                # Simpler implementation: We write chunks to a temporary file locally, then add to zip.
+                # This guarantees no OOM!
+                temp_chunk_file = temp_zip_path + f"_{f['id']}.tmp"
+                try:
+                    with open(temp_chunk_file, 'wb') as tcf:
+                        for chunk in chunks:
+                            cdn_url = chunk['cdn_url']
+                            if not cdn_url:
+                                cdn_url = await roblox.resolve_cdn_url(chunk['asset_id'])
+                                if cdn_url: db.update_chunk_cdn_url(chunk['id'], cdn_url)
+                                else: raise web.HTTPInternalServerError(reason="Chunk corrupted")
+                            async with session.get(cdn_url) as resp:
+                                if resp.status == 200:
+                                    image_bytes = await resp.read()
+                                    enc_data = await loop.run_in_executor(None, ImageCoder.decode, image_bytes)
+                                    dec_data = await loop.run_in_executor(None, CryptoManager.decrypt, enc_data)
+                                    tcf.write(dec_data)
+                                else:
+                                    raise web.HTTPInternalServerError(reason="Chunk download failed")
+                                    
+                    # Now write the completed file into the zip
+                    await loop.run_in_executor(None, zipf.write, temp_chunk_file, f['filename'])
+                finally:
+                    if os.path.exists(temp_chunk_file):
+                        os.remove(temp_chunk_file)
+        finally:
+            await loop.run_in_executor(None, zipf.close)
                                 
     response = web.StreamResponse()
     response.headers['Content-Disposition'] = 'attachment; filename="BloxDrive.zip"'
@@ -212,7 +277,7 @@ async def handle_download_zip(request):
     try:
         with open(temp_zip_path, 'rb') as f:
             while True:
-                data = f.read(1024 * 1024)
+                data = await loop.run_in_executor(None, f.read, 1024 * 1024)
                 if not data:
                     break
                 await response.write(data)

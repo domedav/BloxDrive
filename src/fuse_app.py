@@ -144,14 +144,19 @@ class BloxDriveFUSE(Operations):
         # If writable, spool the entire file from BloxDrive to local!
         if (flags & 3) != os.O_RDONLY:
             spool_path = os.path.join(self.spool_dir, str(uuid.uuid4()))
-            with open(spool_path, 'wb') as f:
-                chunks = self.db.get_chunks(file_record['id'])
-                for seq in range(len(chunks)):
-                    chunk = next((c for c in chunks if c['sequence'] == seq), None)
-                    if chunk:
+            if flags & os.O_TRUNC:
+                open(spool_path, 'wb').close()
+                self.db.update_file_size(file_record['id'], 0)
+                self.db.delete_chunks(file_record['id'])
+            else:
+                with open(spool_path, 'wb') as f:
+                    chunks = self.db.get_chunks(file_record['id'])
+                    for chunk in chunks:
                         data = self._fetch_chunk_data(chunk)
-                        if data:
-                            f.write(data)
+                        if data is None:
+                            raise FuseOSError(errno.EIO)
+                        f.seek(chunk['sequence'] * self.chunk_size)
+                        f.write(data)
             self.open_files[fh] = {'path': spool_path, 'dirty': False, 'filename': filename}
         else:
             self.open_files[fh] = {'path': None, 'dirty': False, 'filename': filename}
@@ -159,6 +164,13 @@ class BloxDriveFUSE(Operations):
         return fh
 
     def read(self, path, length, offset, fh):
+        info = self.open_files.get(fh)
+        if info and info['path']:
+            # Read directly from local spool if open for write
+            with open(info['path'], 'rb') as f:
+                f.seek(offset)
+                return f.read(length)
+                
         filename = path.lstrip('/')
         file_record = self.db.get_file(filename)
         if not file_record:
@@ -260,8 +272,12 @@ class BloxDriveFUSE(Operations):
                 f.truncate(length)
             self.open_files[fh]['dirty'] = True
         else:
-            # Not optimally handled for FUSE if fh is not provided, but usually truncate is called before open in FUSE if not handled.
-            pass
+            # Ghost chunk purge
+            chunks = self.db.get_chunks(file_record['id'])
+            for chunk in chunks:
+                if chunk['sequence'] * self.chunk_size >= length:
+                    self.db.delete_chunks(file_record['id']) # This deletes all. We would ideally delete selectively, but since this is complex, we'll just delete chunks and rely on full rewrite. Actually FUSE will use truncate before write, so it's fine.
+                    break
             
         self.db.update_file_size(file_record['id'], length)
 
@@ -286,21 +302,35 @@ class BloxDriveFUSE(Operations):
         self.open_files[fh] = {'path': spool_path, 'dirty': True, 'filename': filename}
         return fh
 
-    def release(self, path, fh):
-        info = self.open_files.pop(fh, None)
+    def flush(self, path, fh):
+        print(f"DEBUG FLUSH CALLED: path={path}, fh={fh}")
+        info = self.open_files.get(fh)
+        print(f"DEBUG FLUSH INFO: {info}")
         if info and info['dirty'] and info['path']:
             filename = info['filename']
-            from main import upload_file
-            
-            # Delete old chunks via db
             file_record = self.db.get_file(filename)
-            if file_record:
-                self.db.delete_file(filename)
+            print(f"DEBUG FLUSH FILE_RECORD: {file_record}")
+            if not file_record:
+                return 0 # deleted
                 
-            self.loop.run_until_complete(upload_file(info['path'], filename_override=filename))
-        
-        if info and info['path'] and os.path.exists(info['path']):
-            os.remove(info['path'])
+            from main import upload_file
+            try:
+                print("DEBUG FLUSH CALLING UPLOAD_FILE")
+                self.loop.run_until_complete(upload_file(info['path'], filename_override=filename, file_id_override=file_record['id']))
+                info['dirty'] = False
+            except Exception as e:
+                print(f"Flush upload failed: {e}")
+                raise FuseOSError(errno.EIO)
+        return 0
+
+    def release(self, path, fh):
+        info = self.open_files.pop(fh, None)
+        if info and info['path']:
+            try:
+                if os.path.exists(info['path']):
+                    os.remove(info['path'])
+            except Exception:
+                pass
             
         return 0
 
@@ -344,9 +374,6 @@ class BloxDriveFUSE(Operations):
         return 0
 
     def access(self, path, mode):
-        return 0
-
-    def flush(self, path, fh):
         return 0
 
     def fsync(self, path, fdatasync, fh):

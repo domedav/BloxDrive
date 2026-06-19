@@ -17,12 +17,14 @@ def test_deduplication():
     fh1 = fuse.create("/dedup_A.bin", 0o644)
     fuse.write("/dedup_A.bin", test_data, 0, fh1)
     print("Uploading File A...")
+    fuse.flush("/dedup_A.bin", fh1)
     fuse.release("/dedup_A.bin", fh1)
     
     # 2. Write File B (Same data)
     fh2 = fuse.create("/dedup_B.bin", 0o644)
     fuse.write("/dedup_B.bin", test_data, 0, fh2)
     print("Uploading File B (Should be deduplicated)...")
+    fuse.flush("/dedup_B.bin", fh2)
     fuse.release("/dedup_B.bin", fh2)
     
     # 3. Verify they share the same asset_id

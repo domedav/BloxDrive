@@ -749,24 +749,19 @@
 
         async function triggerZipDownload(items) {
             try {
-                const response = await fetch('/api/download_zip', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ items })
-                });
+                const form = document.createElement('form');
+                form.method = 'POST';
+                form.action = '/api/download_zip';
                 
-                if (response.ok) {
-                    const blob = await response.blob();
-                    const url = window.URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = "BloxDrive_Archive.zip";
-                    document.body.appendChild(a);
-                    a.click();
-                    a.remove();
-                } else {
-                    alert("Failed to create ZIP archive.");
-                }
+                const input = document.createElement('input');
+                input.type = 'hidden';
+                input.name = 'items';
+                input.value = JSON.stringify(items);
+                
+                form.appendChild(input);
+                document.body.appendChild(form);
+                form.submit();
+                document.body.removeChild(form);
             } catch (err) {
                 alert("Error downloading ZIP.");
             }
@@ -888,29 +883,39 @@
             
             let promises = [];
             
-            // Note: If you upload 1000s of files, browsers handle the fetch queue automatically.
-            for (let i = 0; i < files.length; i++) {
-                const f = files[i];
-                let relativePath = f.webkitRelativePath || f.name;
-                
-                const formData = new FormData();
-                formData.append('path', currentPath);
-                // Override the filename with the full relative path so backend preserves folders
-                formData.append('file', f, relativePath);
-                
-                const p = fetch('/api/upload', { method: 'POST', body: formData })
-                    .then(() => {
-                        completed++;
-                        progressText.textContent = `Uploading ${completed} of ${total} files...`;
-                        progressBar.style.width = `${(completed / total) * 100}%`;
-                    })
-                    .catch(() => {
-                        completed++;
-                        progressText.textContent = `Uploading ${completed} of ${total} files...`;
-                        progressBar.style.width = `${(completed / total) * 100}%`;
-                    });
+            // Concurrency limit of 3 for uploads to prevent browser/server exhaustion
+            const maxConcurrent = 3;
+            let currentIndex = 0;
+            
+            async function uploadWorker() {
+                while (currentIndex < files.length) {
+                    const i = currentIndex++;
+                    const f = files[i];
+                    let relativePath = f.webkitRelativePath || f.name;
                     
-                promises.push(p);
+                    const formData = new FormData();
+                    formData.append('path', currentPath);
+                    // Override the filename with the full relative path so backend preserves folders
+                    formData.append('file', f, relativePath);
+                    
+                    try {
+                        const response = await fetch('/api/upload', { method: 'POST', body: formData });
+                        const result = await response.json();
+                        if (!result.success) {
+                            console.error(`Upload failed for ${f.name}:`, result.error);
+                        }
+                    } catch (e) {
+                        console.error(`Network error for ${f.name}`);
+                    }
+                    
+                    completed++;
+                    progressText.textContent = `Uploading ${completed} of ${total} files...`;
+                    progressBar.style.width = `${(completed / total) * 100}%`;
+                }
+            }
+            
+            for (let i = 0; i < maxConcurrent; i++) {
+                promises.push(uploadWorker());
             }
             
             setTimeout(fetchFiles, 2000);

@@ -9,7 +9,7 @@ from encoder import ImageCoder
 from fuse_app import mount_drive
 import config
 
-async def upload_file(filepath: str, filename_override: str = None):
+async def upload_file(filepath: str, filename_override: str = None, file_id_override: int = None):
     if not os.path.exists(filepath):
         print(f"Error: File '{filepath}' not found.")
         return
@@ -19,11 +19,17 @@ async def upload_file(filepath: str, filename_override: str = None):
     db = DatabaseManager()
     
     # Check if exists
-    if db.get_file(filename):
+    existing = db.get_file(filename)
+    if existing and not file_id_override:
         print(f"Error: File '{filename}' already exists in BloxDrive.")
         return
 
-    file_id = db.add_file(filename, file_size)
+    if file_id_override:
+        file_id = file_id_override
+        db.update_file_size(file_id, file_size)
+        db.delete_chunks(file_id)
+    else:
+        file_id = db.add_file(filename, file_size)
     roblox = RobloxClient()
 
     chunk_size = config.CHUNK_SIZE_BYTES
@@ -31,41 +37,47 @@ async def upload_file(filepath: str, filename_override: str = None):
     
     print(f"Uploading '{filename}' ({file_size} bytes) in {total_chunks} chunks...")
 
-    with open(filepath, 'rb') as f:
-        from crypto import CryptoManager
-        for seq in range(total_chunks):
-            chunk_data = f.read(chunk_size)
-            actual_size = len(chunk_data)
+    try:
+        with open(filepath, 'rb') as f:
+            from crypto import CryptoManager
+            loop = asyncio.get_event_loop()
             
-            encrypted_data = CryptoManager.encrypt(chunk_data)
-            
-            chunk_hash = hashlib.md5(encrypted_data).hexdigest()
-            existing_chunk = db.get_chunk_by_hash(chunk_hash)
-            
-            if existing_chunk:
-                print(f"  [{seq+1}/{total_chunks}] Chunk duplicated! Skipping upload and reusing asset ID: {existing_chunk['asset_id']}")
-                db.add_chunk(file_id, seq, existing_chunk['asset_id'], actual_size, existing_chunk['cdn_url'], chunk_hash)
-                continue
+            for seq in range(total_chunks):
+                # Offload disk read
+                chunk_data = await loop.run_in_executor(None, f.read, chunk_size)
+                actual_size = len(chunk_data)
                 
-            print(f"  [{seq+1}/{total_chunks}] Encoding chunk...")
-            tmp_png = f"/tmp/bloxdrive_tmp_{file_id}_{seq}.png"
-            ImageCoder.encode(encrypted_data, tmp_png)
-            
-            print(f"  [{seq+1}/{total_chunks}] Uploading to Roblox...")
-            try:
-                asset_id = await roblox.upload_asset(tmp_png, f"{filename}_part_{seq}")
-                print(f"  [{seq+1}/{total_chunks}] Success! Asset ID: {asset_id}")
+                # Offload encryption
+                encrypted_data = await loop.run_in_executor(None, CryptoManager.encrypt, chunk_data)
                 
-                db.add_chunk(file_id, seq, str(asset_id), actual_size, None, chunk_hash)
-            except Exception as e:
-                print(f"  Failed to upload chunk: {e}")
-                # Note: A robust system would cleanup partial db entries here
-                return
-            finally:
-                if os.path.exists(tmp_png):
-                    os.remove(tmp_png)
-            
-    print(f"Upload complete: {filename}")
+                chunk_hash = hashlib.md5(encrypted_data).hexdigest()
+                existing_chunk = db.get_chunk_by_hash(chunk_hash)
+                
+                if existing_chunk:
+                    print(f"  [{seq+1}/{total_chunks}] Chunk duplicated! Skipping upload and reusing asset ID: {existing_chunk['asset_id']}")
+                    db.add_chunk(file_id, seq, existing_chunk['asset_id'], actual_size, existing_chunk['cdn_url'], chunk_hash)
+                    continue
+                    
+                print(f"  [{seq+1}/{total_chunks}] Encoding chunk...")
+                tmp_png = f"/tmp/bloxdrive_tmp_{file_id}_{seq}.png"
+                # Offload image encoding
+                await loop.run_in_executor(None, ImageCoder.encode, encrypted_data, tmp_png)
+                
+                print(f"  [{seq+1}/{total_chunks}] Uploading to Roblox...")
+                try:
+                    asset_id = await roblox.upload_asset(tmp_png, f"{filename}_part_{seq}")
+                    print(f"  [{seq+1}/{total_chunks}] Success! Asset ID: {asset_id}")
+                    
+                    db.add_chunk(file_id, seq, str(asset_id), actual_size, None, chunk_hash)
+                finally:
+                    if os.path.exists(tmp_png):
+                        os.remove(tmp_png)
+                        
+        print(f"Upload complete: {filename}")
+    except Exception as e:
+        print(f"Fatal error during upload: {e}. Cleaning up database record.")
+        db.delete_file(filename)
+        raise
 
 def main():
     parser = argparse.ArgumentParser(description="BloxDrive - Roblox-backed Cloud Storage")

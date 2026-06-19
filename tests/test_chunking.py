@@ -31,6 +31,7 @@ def test_chunking():
     assert written == data_size, "Failed to write full data to spool"
     
     print("Uploading 2.5MB file (Should split into 3 chunks)...")
+    fuse.flush(test_path, fh_write)
     fuse.release(test_path, fh_write)
     
     # 2. Test "Simple" Full Read
@@ -65,6 +66,7 @@ def test_chunking():
     assert stream_read_data == test_data[stream_offset:stream_offset+stream_length], "Data corruption! Boundary read data does not match original."
     print("Streamed Boundary Read: PASS")
     
+    fuse.flush(test_path, fh_read)
     fuse.release(test_path, fh_read)
     fuse.unlink(test_path)
     print("Multi-Chunk Test Completed Successfully!")
