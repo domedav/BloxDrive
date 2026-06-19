@@ -75,15 +75,58 @@ async def handle_delete(request):
     db.delete_file(filename)
     return web.json_response({"success": True})
 
+async def handle_upload(request):
+    reader = await request.multipart()
+    # The frontend should send a 'path' field first, then the 'file'
+    field = await reader.next()
+    
+    path_prefix = ""
+    if field.name == 'path':
+        path_prefix = (await field.read()).decode('utf-8')
+        field = await reader.next()
+        
+    filename = field.filename
+    if path_prefix:
+        filename = f"{path_prefix}/{filename}".replace("//", "/")
+        
+    # Save to a temporary spool file
+    os.makedirs(config.SPOOL_DIR, exist_ok=True)
+    
+    # Use a safe flat filename for the spool to avoid directory traversal
+    safe_spool_name = filename.replace("/", "_")
+    filepath = os.path.join(config.SPOOL_DIR, safe_spool_name)
+    
+    with open(filepath, 'wb') as f:
+        while True:
+            chunk = await field.read_chunk()
+            if not chunk:
+                break
+            f.write(chunk)
+            
+    # Trigger upload in background
+    from main import upload_file
+    
+    async def run_upload():
+        try:
+            await upload_file(filepath, filename_override=filename)
+        finally:
+            if os.path.exists(filepath):
+                os.remove(filepath)
+                
+    asyncio.create_task(run_upload())
+    return web.json_response({"success": True})
+
 async def handle_index(request):
     return web.FileResponse(os.path.join(os.path.dirname(__file__), 'static', 'index.html'))
 
 app = web.Application()
+app.client_max_size = 1024 * 1024 * 1024 * 10 # 10GB limit
 
 # API Routes
 app.router.add_get('/api/files', handle_list_files)
-app.router.add_get('/api/download/{filename}', handle_download)
-app.router.add_delete('/api/delete/{filename}', handle_delete)
+app.router.add_get('/api/download/{filename:.*}', handle_download)
+app.router.add_delete('/api/delete/{filename:.*}', handle_delete)
+app.router.add_post('/api/upload', handle_upload)
 
 # Serve Frontend
 app.router.add_get('/', handle_index)

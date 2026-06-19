@@ -81,6 +81,12 @@ web() {
     nohup python3 webfilemgr/app.py > webui.log 2>&1 &
     echo $! > webui.pid
     echo "Web UI started in background (PID: $(cat webui.pid)). Access it at http://$WEB_HOST:$WEB_PORT"
+    
+    if command -v xdg-open &> /dev/null; then
+        xdg-open "http://localhost:$WEB_PORT" &> /dev/null &
+    elif command -v open &> /dev/null; then
+        open "http://localhost:$WEB_PORT" &> /dev/null &
+    fi
 }
 
 case "$1" in

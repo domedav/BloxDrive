@@ -59,10 +59,33 @@
             margin-bottom: 2rem;
             cursor: pointer;
             transition: all 0.2s;
+            position: relative;
         }
 
-        .upload-zone:hover {
+        .upload-zone.dragover {
             background: #233045;
+            border-color: #60a5fa;
+        }
+
+        .upload-zone input[type="file"] {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            opacity: 0; cursor: pointer;
+        }
+
+        .breadcrumb {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+            font-size: 1.1rem;
+            align-items: center;
+        }
+        .breadcrumb span {
+            color: var(--text-muted);
+            cursor: pointer;
+        }
+        .breadcrumb span:hover {
+            color: var(--text);
         }
 
         .file-list {
@@ -88,8 +111,14 @@
             background: #233045;
         }
 
+        .file-icon {
+            font-size: 1.5rem;
+            margin-right: 1rem;
+        }
+
         .file-info {
             flex-grow: 1;
+            cursor: pointer;
         }
 
         .file-name {
@@ -142,7 +171,6 @@
             color: var(--text-muted);
         }
 
-        /* Notice banner */
         .notice {
             background: rgba(59, 130, 246, 0.1);
             border: 1px solid rgba(59, 130, 246, 0.2);
@@ -152,19 +180,36 @@
             margin-bottom: 2rem;
             font-size: 0.875rem;
         }
+        
+        .upload-progress {
+            display: none;
+            margin-top: 1rem;
+            color: var(--primary);
+            font-weight: bold;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <header>
-            <h1>☁️ BloxDrive Web</h1>
+            <h1>☁️ BloxDrive</h1>
             <div class="stats">
-                <span id="fileCount">0</span> files hosted
+                <span id="fileCount">0</span> items
             </div>
         </header>
 
-        <div class="notice">
-            <strong>Pro Tip:</strong> Files downloaded through this interface are streamed directly from the Roblox Edge CDN and decrypted instantly in memory. They never touch the local hard drive!
+        <div class="upload-zone" id="dropZone">
+            <input type="file" id="fileInput" multiple>
+            <div id="uploadText">
+                <span style="font-size: 2rem;">📥</span><br>
+                <strong>Drag and drop files here to upload</strong><br>
+                <span style="font-size: 0.875rem; color: var(--text-muted);">or click to browse</span>
+            </div>
+            <div class="upload-progress" id="uploadProgress">Uploading... Please wait.</div>
+        </div>
+
+        <div class="breadcrumb" id="breadcrumb">
+            <span onclick="navigateTo('')">🏠 Root</span>
         </div>
 
         <div class="file-list" id="fileList">
@@ -173,6 +218,9 @@
     </div>
 
     <script>
+        let allFiles = [];
+        let currentPath = '';
+
         function formatBytes(bytes, decimals = 2) {
             if (!+bytes) return '0 Bytes';
             const k = 1024;
@@ -185,20 +233,85 @@
         async function fetchFiles() {
             try {
                 const response = await fetch('/api/files');
-                const files = await response.json();
-                
-                document.getElementById('fileCount').textContent = files.length;
-                
-                const list = document.getElementById('fileList');
-                if (files.length === 0) {
-                    list.innerHTML = '<div class="empty-state">No files yet. Drop files into the FUSE mount to upload them!</div>';
-                    return;
-                }
+                allFiles = await response.json();
+                renderView();
+            } catch (err) {
+                document.getElementById('fileList').innerHTML = '<div class="empty-state">Failed to connect to BloxDrive backend.</div>';
+            }
+        }
 
-                list.innerHTML = files.map(f => `
+        function navigateTo(path) {
+            currentPath = path;
+            renderView();
+        }
+
+        function renderView() {
+            // Update breadcrumbs
+            const bc = document.getElementById('breadcrumb');
+            let bcHtml = '<span onclick="navigateTo(\'\')">🏠 Root</span>';
+            if (currentPath !== '') {
+                const parts = currentPath.split('/');
+                let accum = '';
+                parts.forEach(p => {
+                    accum += (accum === '' ? p : '/' + p);
+                    bcHtml += ` / <span onclick="navigateTo('${accum}')">${p}</span>`;
+                });
+            }
+            bc.innerHTML = bcHtml;
+
+            // Filter files and folders for current path
+            const items = [];
+            const folders = new Set();
+            
+            allFiles.forEach(f => {
+                // If we are at 'folder1', file is 'folder1/file.png'
+                // Or file is 'folder1/folder2/file.png'
+                const prefix = currentPath === '' ? '' : currentPath + '/';
+                if (f.filename.startsWith(prefix)) {
+                    const remainder = f.filename.substring(prefix.length);
+                    const slashIdx = remainder.indexOf('/');
+                    if (slashIdx === -1) {
+                        // It's a file in this folder
+                        items.push({ type: 'file', ...f, displayName: remainder });
+                    } else {
+                        // It's a folder
+                        folders.add(remainder.substring(0, slashIdx));
+                    }
+                }
+            });
+
+            const list = document.getElementById('fileList');
+            if (items.length === 0 && folders.size === 0) {
+                list.innerHTML = '<div class="empty-state">This folder is empty. Drag files above to upload!</div>';
+                document.getElementById('fileCount').textContent = 0;
+                return;
+            }
+
+            document.getElementById('fileCount').textContent = items.length + folders.size;
+
+            let html = '';
+            
+            // Render folders
+            Array.from(folders).sort().forEach(folderName => {
+                const targetPath = currentPath === '' ? folderName : currentPath + '/' + folderName;
+                html += `
                     <div class="file-item">
+                        <div class="file-icon">📁</div>
+                        <div class="file-info" onclick="navigateTo('${targetPath}')">
+                            <div class="file-name">${folderName}</div>
+                            <div class="file-meta">Folder</div>
+                        </div>
+                    </div>
+                `;
+            });
+
+            // Render files
+            items.sort((a,b) => a.displayName.localeCompare(b.displayName)).forEach(f => {
+                html += `
+                    <div class="file-item">
+                        <div class="file-icon">📄</div>
                         <div class="file-info">
-                            <div class="file-name">📄 ${f.filename}</div>
+                            <div class="file-name">${f.displayName}</div>
                             <div class="file-meta">
                                 ${formatBytes(f.size)} • Uploaded ${new Date(f.created_at).toLocaleDateString()}
                             </div>
@@ -208,15 +321,14 @@
                             <button class="btn btn-danger" onclick="deleteFile('${f.filename}')">Delete</button>
                         </div>
                     </div>
-                `).join('');
-            } catch (err) {
-                document.getElementById('fileList').innerHTML = '<div class="empty-state">Failed to connect to BloxDrive backend.</div>';
-            }
+                `;
+            });
+
+            list.innerHTML = html;
         }
 
         async function deleteFile(filename) {
             if (!confirm(`Are you sure you want to delete ${filename}?`)) return;
-            
             try {
                 const response = await fetch(`/api/delete/${encodeURIComponent(filename)}`, { method: 'DELETE' });
                 if (response.ok) {
@@ -225,13 +337,67 @@
                     alert('Failed to delete file');
                 }
             } catch (err) {
-                console.error(err);
                 alert('Error deleting file');
             }
         }
 
+        // Upload functionality
+        const fileInput = document.getElementById('fileInput');
+        const dropZone = document.getElementById('dropZone');
+        const uploadProgress = document.getElementById('uploadProgress');
+        const uploadText = document.getElementById('uploadText');
+
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('dragover');
+        });
+
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('dragover');
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+            handleUpload(e.dataTransfer.files);
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            handleUpload(e.target.files);
+        });
+
+        async function handleUpload(files) {
+            if (files.length === 0) return;
+            
+            uploadText.style.display = 'none';
+            uploadProgress.style.display = 'block';
+            
+            // Just upload them asynchronously
+            let promises = [];
+            for (let i = 0; i < files.length; i++) {
+                const formData = new FormData();
+                formData.append('path', currentPath);
+                formData.append('file', files[i]);
+                promises.push(fetch('/api/upload', { method: 'POST', body: formData }));
+            }
+            
+            uploadProgress.textContent = "Processing upload in background! Files will appear momentarily.";
+            
+            // Trigger fetch files occasionally to update list when background finishes
+            setTimeout(fetchFiles, 2000);
+            setTimeout(fetchFiles, 5000);
+            setTimeout(fetchFiles, 10000);
+            
+            setTimeout(() => {
+                uploadText.style.display = 'block';
+                uploadProgress.style.display = 'none';
+                fileInput.value = '';
+            }, 3000);
+        }
+
         // Initial load
         fetchFiles();
+        setInterval(fetchFiles, 10000); // Polling for background updates
     </script>
 </body>
 </html>
