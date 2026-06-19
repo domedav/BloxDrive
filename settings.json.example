@@ -1,0 +1,14 @@
+{
+    "CHUNK_SIZE_MB": 19,
+    "RATE_LIMIT_UPLOADS_PER_MIN": 55,
+    "MOUNT_DIR": "/tmp/bloxdrive_mnt",
+    "SPOOL_DIR": "/tmp/bloxdrive_spool",
+    "AUTH_PORT": 32666,
+    "WEB_PORT": 32667,
+    "WEB_HOST": "0.0.0.0",
+    "DB_HOST": "127.0.0.1",
+    "DB_PORT": 3306,
+    "DB_USER": "bloxdrive",
+    "DB_PASS": "bloxdrive",
+    "DB_NAME": "bloxdrive",
+}

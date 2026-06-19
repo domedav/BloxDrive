@@ -1,0 +1,9 @@
+URL to Create API Key:
+https://create.roblox.com/dashboard/credentials?activeTab=ApiKeysTab
+
+Required Permissions:
+- `assets` (Write access)
+
+Explanation:
+BloxDrive uses the modern Open Cloud v1 Assets API to upload file chunks as Image Decals. You ONLY need the `assets` permission with "Write" (Create Asset) access. No read permissions are needed because the system uses your `.ROBLOSECURITY` cookie to read and stream files directly from Roblox's global Edge CDN (assetdelivery.roblox.com). 
+You do not need Universe or Legacy permissions.
