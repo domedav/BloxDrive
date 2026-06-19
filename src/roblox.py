@@ -21,6 +21,9 @@ class RobloxClient:
         # Rate Limiting
         self.uploads_per_min = config.RATE_LIMIT_UPLOADS_PER_MIN
         self.upload_timestamps = []
+        
+        self.downloads_per_min = config.RATE_LIMIT_DOWNLOADS_PER_MIN
+        self.download_timestamps = []
 
     async def _wait_for_rate_limit(self):
         """Simple leaky bucket rate limiting."""
@@ -39,6 +42,29 @@ class RobloxClient:
             self.upload_timestamps = [t for t in self.upload_timestamps if now - t < timedelta(seconds=60)]
 
         self.upload_timestamps.append(datetime.now())
+        
+        import random
+        await asyncio.sleep(random.uniform(1.0, 4.0))
+
+    async def _wait_for_read_rate_limit(self):
+        """Simple leaky bucket rate limiting for downloads."""
+        now = datetime.now()
+        self.download_timestamps = [t for t in self.download_timestamps if now - t < timedelta(seconds=60)]
+        
+        if len(self.download_timestamps) >= self.downloads_per_min:
+            wait_time = 60 - (now - self.download_timestamps[0]).total_seconds()
+            if wait_time > 0:
+                print(f"Read rate limit approaching. Waiting {wait_time:.2f} seconds...")
+                await asyncio.sleep(wait_time)
+            
+            now = datetime.now()
+            self.download_timestamps = [t for t in self.download_timestamps if now - t < timedelta(seconds=60)]
+
+        self.download_timestamps.append(datetime.now())
+        
+        # Add a random offset between 0.5 and 2.0 seconds to distribute downloads organically
+        import random
+        await asyncio.sleep(random.uniform(0.5, 2.0))
 
     async def upload_asset(self, filepath: str, name: str = None) -> str:
         """
@@ -119,8 +145,18 @@ class RobloxClient:
         Resolves an Asset ID to a direct rbxcdn.com URL.
         Note: The assetdelivery API does not require Open Cloud auth, it uses standard web requests.
         """
-        import auth_server
-        token = auth_server.get_auth_token()
+        await self._wait_for_read_rate_limit()
+        
+        token = None
+        import os, json
+        if os.path.exists('auth.json'):
+            try:
+                with open('auth.json', 'r') as f:
+                    data = json.load(f)
+                    token = data.get('token')
+            except Exception:
+                pass
+        
         cookies = {".ROBLOSECURITY": token} if token else {}
         
         url = f"https://assetdelivery.roblox.com/v2/assetId/{asset_id}"

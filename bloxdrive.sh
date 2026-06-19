@@ -5,8 +5,14 @@ export PYTHONPATH="$PWD/src:$PYTHONPATH"
 MOUNT_DIR=$(python3 -c "import sys; sys.path.append('src'); import config; print(config.MOUNT_DIR)")
 
 start() {
+    # Try to unmount if there's a stale mount (fixes 'Transport endpoint is not connected' errors)
+    fusermount -uz "$MOUNT_DIR" 2>/dev/null || true
+
     # Create mount directory if it doesn't exist
     mkdir -p "$MOUNT_DIR"
+    
+    # Run unified interactive setup check in foreground
+    python3 -c "import sys; sys.path.append('src'); import auth_server; auth_server.ensure_setup()" || exit 1
     
     echo "Starting BloxDrive FUSE at $MOUNT_DIR..."
     # Run the FUSE mount in the background and redirect logs
@@ -21,13 +27,9 @@ start() {
 stop() {
     echo "Stopping BloxDrive..."
     
-    # Check if mounted and unmount it safely
-    if mountpoint -q "$MOUNT_DIR"; then
-        fusermount -u "$MOUNT_DIR"
-        echo "Successfully unmounted $MOUNT_DIR."
-    else
-        echo "Directory $MOUNT_DIR is not mounted."
-    fi
+    # Forcefully lazy-unmount
+    fusermount -uz "$MOUNT_DIR" 2>/dev/null || true
+    echo "Unmount signal sent to $MOUNT_DIR."
 
     # Kill the background process if it exists
     if [ -f bloxdrive.pid ]; then

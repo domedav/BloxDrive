@@ -10,5 +10,5 @@
     "DB_PORT": 3306,
     "DB_USER": "bloxdrive",
     "DB_PASS": "bloxdrive",
-    "DB_NAME": "bloxdrive",
+    "DB_NAME": "bloxdrive"
 }

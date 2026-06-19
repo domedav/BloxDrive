@@ -48,7 +48,7 @@ async def upload_file(filepath: str, filename_override: str = None):
                 continue
                 
             print(f"  [{seq+1}/{total_chunks}] Encoding chunk...")
-            tmp_png = f"/tmp/bloxdrive_tmp_{seq}.png"
+            tmp_png = f"/tmp/bloxdrive_tmp_{file_id}_{seq}.png"
             ImageCoder.encode(encrypted_data, tmp_png)
             
             print(f"  [{seq+1}/{total_chunks}] Uploading to Roblox...")
@@ -68,9 +68,6 @@ async def upload_file(filepath: str, filename_override: str = None):
     print(f"Upload complete: {filename}")
 
 def main():
-    import auth_server
-    auth_server.get_auth_token()
-
     parser = argparse.ArgumentParser(description="BloxDrive - Roblox-backed Cloud Storage")
     subparsers = parser.add_subparsers(dest="command", required=True)
 

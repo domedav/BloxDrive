@@ -45,29 +45,91 @@ class BloxDriveFUSE(Operations):
             }
 
         filename = path.lstrip('/')
-        file_record = self.db.get_file(filename)
         
+        if self.db.is_folder(filename):
+            # Try to get the .keep file to use its metadata
+            keep_record = self.db.get_file(filename + "/.keep")
+            if keep_record:
+                return {
+                    'st_mode': keep_record.get('mode', (stat.S_IFDIR | 0o755)),
+                    'st_nlink': 2,
+                    'st_size': 0,
+                    'st_uid': keep_record.get('uid', 1000),
+                    'st_gid': keep_record.get('gid', 1000),
+                    'st_atime': keep_record.get('atime', time.time()),
+                    'st_mtime': keep_record.get('mtime', time.time()),
+                    'st_ctime': keep_record.get('ctime', time.time())
+                }
+            else:
+                return {
+                    'st_mode': (stat.S_IFDIR | 0o755),
+                    'st_nlink': 2,
+                    'st_size': 0,
+                    'st_uid': 1000,
+                    'st_gid': 1000,
+                    'st_ctime': time.time(),
+                    'st_mtime': time.time(),
+                    'st_atime': time.time()
+                }
+
+        file_record = self.db.get_file(filename)
         if not file_record:
             raise FuseOSError(errno.ENOENT)
 
         return {
-            'st_mode': (stat.S_IFREG | 0o644),
+            'st_mode': file_record.get('mode', (stat.S_IFREG | 0o644)),
             'st_nlink': 1,
             'st_size': file_record['size'],
-            'st_ctime': file_record['created_at'].timestamp(),
-            'st_mtime': file_record['created_at'].timestamp(),
-            'st_atime': file_record['created_at'].timestamp()
+            'st_uid': file_record.get('uid', 1000),
+            'st_gid': file_record.get('gid', 1000),
+            'st_atime': file_record.get('atime', file_record['created_at'].timestamp()),
+            'st_mtime': file_record.get('mtime', file_record['created_at'].timestamp()),
+            'st_ctime': file_record.get('ctime', file_record['created_at'].timestamp())
         }
 
     def readdir(self, path, fh):
-        if path != '/':
-            raise FuseOSError(errno.ENOENT)
-
         dirents = ['.', '..']
         files = self.db.list_files()
+        prefix = "" if path == '/' else path.lstrip('/') + '/'
+        
         for f in files:
-            dirents.append(f['filename'])
+            filename = f['filename']
+            if filename.startswith(prefix):
+                remainder = filename[len(prefix):]
+                parts = remainder.split('/')
+                if len(parts) == 1:
+                    if remainder != '.keep' and remainder != '':
+                        dirents.append(remainder)
+                else:
+                    dirname = parts[0]
+                    if dirname not in dirents:
+                        dirents.append(dirname)
         return dirents
+
+    def mkdir(self, path, mode):
+        filename = path.lstrip('/')
+        self.db.add_file(filename + "/.keep", 0)
+        self.db.update_mode(filename + "/.keep", stat.S_IFDIR | mode)
+
+    def rmdir(self, path):
+        filename = path.lstrip('/')
+        prefix = filename + "/"
+        files = self.db.list_files()
+        # Ensure it's empty
+        for f in files:
+            if f['filename'].startswith(prefix) and f['filename'] != prefix + ".keep":
+                raise FuseOSError(errno.ENOTEMPTY)
+        
+        self.db.delete_file(prefix + ".keep")
+
+    def rename(self, old, new):
+        old_filename = old.lstrip('/')
+        new_filename = new.lstrip('/')
+        
+        if self.db.is_folder(old_filename):
+            self.db.rename_folder(old_filename, new_filename)
+        else:
+            self.db.rename_file(old_filename, new_filename)
 
     def open(self, path, flags):
         filename = path.lstrip('/')
@@ -150,6 +212,7 @@ class BloxDriveFUSE(Operations):
             # Future Optimization: Since PNGs are compressed, random access into the raw binary
             # requires streaming the image, decoding it, and then pulling the bytes. 
             # For now, we fetch the whole 20MB PNG into memory, decode it, and cache it.
+            import requests
             resp = requests.get(cdn_url, timeout=10)
             if resp.status_code == 200:
                 encrypted_bytes = ImageCoder.decode(resp.content)
@@ -212,6 +275,8 @@ class BloxDriveFUSE(Operations):
             self.db.delete_file(filename)
             self.db.add_file(filename, 0)
             
+        self.db.update_mode(filename, stat.S_IFREG | mode)
+        
         fh = self.next_fh
         self.next_fh += 1
         
@@ -246,6 +311,81 @@ class BloxDriveFUSE(Operations):
             self.db.delete_file(filename)
         else:
             raise FuseOSError(errno.ENOENT)
+
+    # --- POSIX Compatibility Stubs ---
+    
+    def chmod(self, path, mode):
+        filename = path.lstrip('/')
+        if self.db.is_folder(filename):
+            self.db.update_mode(filename + "/.keep", mode)
+        else:
+            self.db.update_mode(filename, mode)
+        return 0
+
+    def chown(self, path, uid, gid):
+        filename = path.lstrip('/')
+        if self.db.is_folder(filename):
+            self.db.update_chown(filename + "/.keep", uid, gid)
+        else:
+            self.db.update_chown(filename, uid, gid)
+        return 0
+
+    def utimens(self, path, times=None):
+        filename = path.lstrip('/')
+        if times is None:
+            atime = mtime = time.time()
+        else:
+            atime, mtime = times
+            
+        if self.db.is_folder(filename):
+            self.db.update_utimens(filename + "/.keep", atime, mtime)
+        else:
+            self.db.update_utimens(filename, atime, mtime)
+        return 0
+
+    def access(self, path, mode):
+        return 0
+
+    def flush(self, path, fh):
+        return 0
+
+    def fsync(self, path, fdatasync, fh):
+        return 0
+
+    def statfs(self, path):
+        # Report 1 Terabyte free to avoid 32-bit integer overflow in FUSE structs
+        blocks = 2**28 # ~1 TB with 4K blocks
+        return {
+            'f_bsize': 4096,
+            'f_frsize': 4096,
+            'f_blocks': blocks,
+            'f_bavail': blocks,
+            'f_bfree': blocks,
+            'f_files': 1000000,
+            'f_ffree': 1000000,
+            'f_namemax': 255
+        }
+
+    def mknod(self, path, mode, dev):
+        # Sometimes used instead of 'create' by certain tools
+        filename = path.lstrip('/')
+        if stat.S_ISREG(mode):
+            self.db.add_file(filename, 0)
+        return 0
+
+    def symlink(self, target, source):
+        # We don't natively support symlinks in DB right now, but we can throw ENOSYS
+        raise FuseOSError(errno.ENOSYS)
+
+    def readlink(self, path):
+        raise FuseOSError(errno.ENOSYS)
+
+    def getxattr(self, path, name, position=0):
+        # Just return ENODATA for extended attributes so tools don't crash
+        raise FuseOSError(errno.ENODATA)
+
+    def listxattr(self, path):
+        return []
 
 def mount_drive(mountpoint):
     db = DatabaseManager()

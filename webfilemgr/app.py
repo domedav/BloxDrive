@@ -67,7 +67,13 @@ async def handle_download(request):
 
 async def handle_delete(request):
     filename = request.match_info.get('filename')
+    is_folder = request.query.get('is_folder') == 'true'
     db = DatabaseManager()
+    
+    if is_folder:
+        db.delete_folder(filename)
+        return web.json_response({"success": True})
+        
     file_record = db.get_file(filename)
     if not file_record:
         return web.json_response({"error": "Not found"}, status=404)
@@ -93,7 +99,8 @@ async def handle_upload(request):
     os.makedirs(config.SPOOL_DIR, exist_ok=True)
     
     # Use a safe flat filename for the spool to avoid directory traversal
-    safe_spool_name = filename.replace("/", "_")
+    import uuid
+    safe_spool_name = filename.replace("/", "_") + "_" + str(uuid.uuid4())
     filepath = os.path.join(config.SPOOL_DIR, safe_spool_name)
     
     with open(filepath, 'wb') as f:
@@ -116,6 +123,105 @@ async def handle_upload(request):
     asyncio.create_task(run_upload())
     return web.json_response({"success": True})
 
+async def handle_rename(request):
+    data = await request.json()
+    old_name = data.get('old_name')
+    new_name = data.get('new_name')
+    is_folder = data.get('is_folder', False)
+    
+    db = DatabaseManager()
+    if is_folder:
+        db.rename_folder(old_name, new_name)
+    else:
+        db.rename_file(old_name, new_name)
+    return web.json_response({"success": True})
+
+async def handle_create_folder(request):
+    data = await request.json()
+    path = data.get('path')
+    if not path:
+        return web.json_response({"error": "Path required"}, status=400)
+    
+    # We create a dummy .keep file to instantiate the folder
+    dummy_file = f"{path}/.keep"
+    db = DatabaseManager()
+    if not db.get_file(dummy_file):
+        db.add_file(dummy_file, 0)
+        import stat
+        db.update_mode(dummy_file, stat.S_IFDIR | 0o755)
+    return web.json_response({"success": True})
+
+async def handle_download_zip(request):
+    data = await request.json()
+    items = data.get('items', [])
+    
+    db = DatabaseManager()
+    files_to_download = []
+    
+    for item in items:
+        name = item['name']
+        is_folder = item['is_folder']
+        if is_folder:
+            all_db_files = db.list_files()
+            prefix = name + "/"
+            for f in all_db_files:
+                if f['filename'].startswith(prefix):
+                    files_to_download.append(f)
+        else:
+            f = db.get_file(name)
+            if f: files_to_download.append(f)
+            
+    import tempfile, zipfile
+    from roblox import RobloxClient
+    roblox = RobloxClient()
+    
+    # Create temp zip file
+    fd, temp_zip_path = tempfile.mkstemp(suffix=".zip")
+    os.close(fd)
+    
+    async with ClientSession() as session:
+        with zipfile.ZipFile(temp_zip_path, 'w', zipfile.ZIP_DEFLATED, allowZip64=True) as zipf:
+            for f in files_to_download:
+                if f['size'] == 0:
+                    continue # Skip .keep
+                    
+                chunks = db.get_chunks(f['id'])
+                
+                with zipf.open(f['filename'], 'w', force_zip64=True) as z_file:
+                    for chunk in chunks:
+                        cdn_url = chunk['cdn_url']
+                        if not cdn_url:
+                            cdn_url = await roblox.resolve_cdn_url(chunk['asset_id'])
+                            if cdn_url: db.update_chunk_cdn_url(chunk['id'], cdn_url)
+                            else: continue
+                        async with session.get(cdn_url) as resp:
+                            if resp.status == 200:
+                                image_bytes = await resp.read()
+                                loop = asyncio.get_event_loop()
+                                enc_data = await loop.run_in_executor(None, ImageCoder.decode, image_bytes)
+                                dec_data = await loop.run_in_executor(None, CryptoManager.decrypt, enc_data)
+                                z_file.write(dec_data)
+                                
+    response = web.StreamResponse()
+    response.headers['Content-Disposition'] = 'attachment; filename="BloxDrive.zip"'
+    response.headers['Content-Type'] = 'application/zip'
+    response.headers['Content-Length'] = str(os.path.getsize(temp_zip_path))
+    
+    await response.prepare(request)
+    
+    try:
+        with open(temp_zip_path, 'rb') as f:
+            while True:
+                data = f.read(1024 * 1024)
+                if not data:
+                    break
+                await response.write(data)
+    finally:
+        if os.path.exists(temp_zip_path):
+            os.remove(temp_zip_path)
+            
+    return response
+
 async def handle_index(request):
     return web.FileResponse(os.path.join(os.path.dirname(__file__), 'static', 'index.html'))
 
@@ -127,6 +233,9 @@ app.router.add_get('/api/files', handle_list_files)
 app.router.add_get('/api/download/{filename:.*}', handle_download)
 app.router.add_delete('/api/delete/{filename:.*}', handle_delete)
 app.router.add_post('/api/upload', handle_upload)
+app.router.add_post('/api/rename', handle_rename)
+app.router.add_post('/api/create_folder', handle_create_folder)
+app.router.add_post('/api/download_zip', handle_download_zip)
 
 # Serve Frontend
 app.router.add_get('/', handle_index)
