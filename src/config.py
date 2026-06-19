@@ -3,16 +3,24 @@ import json
 
 # Try to load custom settings from settings.json
 _settings = {}
-_settings_path = os.path.join(os.path.dirname(__file__), "..", "settings.json")
-if os.path.exists(_settings_path):
-    with open(_settings_path, "r") as f:
+SETTINGS_FILE = os.path.join(os.path.dirname(__file__), "..", "settings.json")
+EXAMPLE_FILE = os.path.join(os.path.dirname(__file__), "..", "settings.json.example")
+
+if os.path.exists(SETTINGS_FILE):
+    with open(SETTINGS_FILE, "r") as f:
         _settings = json.load(f)
+else:
+    if os.path.exists(EXAMPLE_FILE):
+        with open(EXAMPLE_FILE, "r") as f:
+            _settings = json.load(f)
+    else:
+        _settings = {}
 
 # Auto-generate encryption key if not present
 if "ENCRYPTION_KEY" not in _settings:
     import base64
     _settings["ENCRYPTION_KEY"] = base64.b64encode(os.urandom(32)).decode('utf-8')
-    with open(_settings_path, "w") as f:
+    with open(SETTINGS_FILE, "w") as f:
         json.dump(_settings, f, indent=4)
 
 # Roblox Configuration
