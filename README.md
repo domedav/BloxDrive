@@ -1,6 +1,11 @@
 # ☁️ BloxDrive
 
-**BloxDrive** is a revolutionary Cloud FUSE File System that converts your unlimited Roblox inventory into a secure, infinite, high-speed virtual hard drive.
+![GitHub release (latest by date)](https://img.shields.io/github/v/release/domedav/BloxDrive)
+![License](https://img.shields.io/badge/license-MIT-blue.svg)
+
+> **Free Infinite Cloud Storage | AES-256 Encryption | Linux FUSE Filesystem | Open Source Python Drive**
+
+**BloxDrive** is a revolutionary Cloud FUSE File System that converts your unlimited Roblox inventory into a secure, infinite, high-speed virtual hard drive. Designed for Linux, this open-source Python storage solution bypasses API limits by seamlessly chunking, encrypting, and hiding your personal files inside image decals using steganography.
 
 ## ✨ Features
 1. **Infinite Storage**: Mounts natively as a local FUSE filesystem on Linux (*Note: This tool is built primarily for Linux, as FUSE requires native kernel support*). Drag and drop any file!
