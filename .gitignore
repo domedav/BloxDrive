@@ -7,3 +7,5 @@ auth.json
 *.pid
 /tmp/
 /tests/*.bin
+/bloxdrive_mnt/
+/bloxdrive_spool/
