@@ -8,7 +8,7 @@ import json
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from db import DatabaseManager
-from roblox import RobloxClient
+from roblox_pool import RobloxPool
 from encoder import ImageCoder
 from crypto import CryptoManager
 import config
@@ -39,31 +39,16 @@ async def handle_download(request):
     await response.prepare(request)
     
     chunks = db.get_chunks(file_record['id'])
-    roblox = RobloxClient()
+    pool = RobloxPool()
     
     async with ClientSession() as session:
         for chunk in chunks:
-            cdn_url = chunk['cdn_url']
-            if not cdn_url:
-                cdn_url = await roblox.resolve_cdn_url(chunk['asset_id'])
-                if cdn_url:
-                    db.update_chunk_cdn_url(chunk['id'], cdn_url)
-                else:
-                    raise web.HTTPInternalServerError(reason="Failed to resolve CDN URL. File may be corrupted.")
-            
-            # Fetch image
-            async with session.get(cdn_url) as resp:
-                if resp.status == 200:
-                    image_bytes = await resp.read()
-                    
-                    # Decrypt in thread to avoid blocking event loop
-                    loop = asyncio.get_event_loop()
-                    encrypted_data = await loop.run_in_executor(None, ImageCoder.decode, image_bytes)
-                    decrypted_data = await loop.run_in_executor(None, CryptoManager.decrypt, encrypted_data)
-                    
-                    await response.write(decrypted_data)
-                else:
-                    raise web.HTTPInternalServerError(reason=f"Failed to fetch chunk. Status {resp.status}")
+            try:
+                decrypted_data = await pool.fetch_chunk_data(chunk, db, session)
+                await response.write(decrypted_data)
+            except Exception as e:
+                print(f"Failed to fetch chunk: {e}")
+                raise web.HTTPInternalServerError(reason="Failed to fetch chunk. File may be corrupted or accounts unavailable.")
                     
     return response
 
@@ -206,8 +191,7 @@ async def handle_download_zip(request):
             if f: files_to_download[f['id']] = f
             
     import tempfile, zipfile
-    from roblox import RobloxClient
-    roblox = RobloxClient()
+    pool = RobloxPool()
     
     # Create temp zip file
     fd, temp_zip_path = tempfile.mkstemp(suffix=".zip")
@@ -240,19 +224,12 @@ async def handle_download_zip(request):
                 try:
                     with open(temp_chunk_file, 'wb') as tcf:
                         for chunk in chunks:
-                            cdn_url = chunk['cdn_url']
-                            if not cdn_url:
-                                cdn_url = await roblox.resolve_cdn_url(chunk['asset_id'])
-                                if cdn_url: db.update_chunk_cdn_url(chunk['id'], cdn_url)
-                                else: raise web.HTTPInternalServerError(reason="Chunk corrupted")
-                            async with session.get(cdn_url) as resp:
-                                if resp.status == 200:
-                                    image_bytes = await resp.read()
-                                    enc_data = await loop.run_in_executor(None, ImageCoder.decode, image_bytes)
-                                    dec_data = await loop.run_in_executor(None, CryptoManager.decrypt, enc_data)
-                                    tcf.write(dec_data)
-                                else:
-                                    raise web.HTTPInternalServerError(reason="Chunk download failed")
+                            try:
+                                dec_data = await pool.fetch_chunk_data(chunk, db, session)
+                                tcf.write(dec_data)
+                            except Exception as e:
+                                print(f"Chunk download failed: {e}")
+                                raise web.HTTPInternalServerError(reason="Chunk download failed")
                                     
                     # Now write the completed file into the zip
                     await loop.run_in_executor(None, zipf.write, temp_chunk_file, f['filename'])
@@ -285,6 +262,27 @@ async def handle_download_zip(request):
 async def handle_index(request):
     return web.FileResponse(os.path.join(os.path.dirname(__file__), 'static', 'index.html'))
 
+async def handle_raid_status(request):
+    pool = RobloxPool()
+    db = DatabaseManager()
+    accounts = db.get_healthy_accounts()
+    
+    return web.json_response({
+        "raid_enabled": pool.raid_enabled,
+        "total_accounts": pool.n,
+        "accounts": [{"id": a["id"], "label": a["label"]} for a in accounts]
+    })
+
+async def handle_raid_add(request):
+    import subprocess
+    import sys
+    
+    # Run the setup wizard in the background
+    # It will open port 32666
+    subprocess.Popen([sys.executable, "src/main.py", "raid", "add"])
+    
+    return web.json_response({"success": True, "port": config.AUTH_PORT})
+
 app = web.Application()
 app.client_max_size = 1024 * 1024 * 1024 * 10 # 10GB limit
 
@@ -300,6 +298,8 @@ app.router.add_post('/api/download_zip', handle_download_zip)
 # Serve Frontend
 app.router.add_get('/', handle_index)
 app.router.add_static('/static/', path=os.path.join(os.path.dirname(__file__), 'static'), name='static')
+app.router.add_get('/api/raid/status', handle_raid_status)
+app.router.add_post('/api/raid/add', handle_raid_add)
 
 if __name__ == '__main__':
     port = config.WEB_PORT

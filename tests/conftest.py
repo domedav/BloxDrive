@@ -4,7 +4,9 @@ import shutil
 import uuid
 
 @pytest.fixture(autouse=True)
-def mock_roblox_client(monkeypatch):
+def mock_roblox_client(request, monkeypatch):
+    if 'nomockroblox' in request.keywords:
+        return
     import sys
     sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'src'))
     from roblox import RobloxClient
@@ -43,7 +45,7 @@ def mock_roblox_client(monkeypatch):
             import json
             return json.loads(self._content)
             
-    def mock_request(self, method, str_or_url, **kwargs):
+    async def mock_request(self, method, str_or_url, **kwargs):
         url_str = str(str_or_url)
         if url_str.startswith("http://mock_cdn/"):
             asset_id = url_str.split("/")[-1]
@@ -51,7 +53,7 @@ def mock_roblox_client(monkeypatch):
             with open(filepath, 'rb') as f:
                 content = f.read()
             return MockResponse(content)
-        return original_request(self, method, str_or_url, **kwargs)
+        return await original_request(self, method, str_or_url, **kwargs)
         
     monkeypatch.setattr(aiohttp.ClientSession, "_request", mock_request)
     

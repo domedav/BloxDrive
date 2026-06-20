@@ -74,6 +74,14 @@ auth() {
     python3 src/main.py auth
 }
 
+raid() {
+    if [ -z "$1" ]; then
+        echo "Usage: $0 raid {status|add|remove|enable|recover|protect}"
+        exit 1
+    fi
+    python3 src/main.py raid "$@"
+}
+
 web() {
     start
     
@@ -109,11 +117,15 @@ case "$1" in
     auth)
         auth
         ;;
+    raid)
+        shift
+        raid "$@"
+        ;;
     web)
         web
         ;;
     *)
-        echo "Usage: $0 {start|stop|status|restart|auth|web}"
+        echo "Usage: $0 {start|stop|status|restart|auth|raid|web}"
         exit 1
         ;;
 esac

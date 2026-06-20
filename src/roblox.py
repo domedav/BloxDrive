@@ -12,16 +12,11 @@ class RobloxClient:
     Handles uploading assets to Roblox via the Open Cloud API.
     Also handles resolving Asset IDs to CDN URLs for streaming.
     """
-    _upload_lock = None
-    _download_lock = None
     _session = None
-    
-    _upload_timestamps = []
-    _download_timestamps = []
 
-    def __init__(self):
-        self.api_key = config.ROBLOX_API_KEY
-        self.user_id = config.ROBLOX_USER_ID
+    def __init__(self, api_key=None, user_id=None, auth_token=None, account_id=None):
+        self.api_key = api_key or config.ROBLOX_API_KEY
+        self.user_id = user_id or config.ROBLOX_USER_ID
         self.headers = {
             "x-api-key": self.api_key
         }
@@ -29,21 +24,17 @@ class RobloxClient:
         self.uploads_per_min = config.RATE_LIMIT_UPLOADS_PER_MIN
         self.downloads_per_min = config.RATE_LIMIT_DOWNLOADS_PER_MIN
         
+        self.account_id = account_id
+
         # Cache auth token in memory to avoid reading from disk on every chunk
-        self._auth_token = None
-        self._auth_loaded = False
+        self._auth_token = auth_token
+        self._auth_loaded = auth_token is not None
 
-    @classmethod
-    def _get_upload_lock(cls):
-        if cls._upload_lock is None:
-            cls._upload_lock = asyncio.Lock()
-        return cls._upload_lock
-
-    @classmethod
-    def _get_download_lock(cls):
-        if cls._download_lock is None:
-            cls._download_lock = asyncio.Lock()
-        return cls._download_lock
+        # Instance-level rate limiters
+        self._upload_lock = asyncio.Lock()
+        self._download_lock = asyncio.Lock()
+        self._upload_timestamps = []
+        self._download_timestamps = []
 
     @classmethod
     async def get_session(cls, headers=None):
@@ -54,40 +45,40 @@ class RobloxClient:
 
     async def _wait_for_rate_limit(self):
         """Simple leaky bucket rate limiting with Lock."""
-        async with self._get_upload_lock():
+        async with self._upload_lock:
             now = datetime.now()
             # Keep only timestamps from the last 60 seconds
-            RobloxClient._upload_timestamps = [t for t in RobloxClient._upload_timestamps if now - t < timedelta(seconds=60)]
+            self._upload_timestamps = [t for t in self._upload_timestamps if now - t < timedelta(seconds=60)]
             
-            if len(RobloxClient._upload_timestamps) >= self.uploads_per_min:
-                wait_time = 60 - (now - RobloxClient._upload_timestamps[0]).total_seconds()
+            if len(self._upload_timestamps) >= self.uploads_per_min:
+                wait_time = 60 - (now - self._upload_timestamps[0]).total_seconds()
                 if wait_time > 0:
                     print(f"Rate limit approaching. Waiting {wait_time:.2f} seconds...")
                     await asyncio.sleep(wait_time)
                 
                 now = datetime.now()
-                RobloxClient._upload_timestamps = [t for t in RobloxClient._upload_timestamps if now - t < timedelta(seconds=60)]
+                self._upload_timestamps = [t for t in self._upload_timestamps if now - t < timedelta(seconds=60)]
 
-            RobloxClient._upload_timestamps.append(datetime.now())
+            self._upload_timestamps.append(datetime.now())
             
         await asyncio.sleep(random.uniform(1.0, 4.0))
 
     async def _wait_for_read_rate_limit(self):
         """Simple leaky bucket rate limiting for downloads with Lock."""
-        async with self._get_download_lock():
+        async with self._download_lock:
             now = datetime.now()
-            RobloxClient._download_timestamps = [t for t in RobloxClient._download_timestamps if now - t < timedelta(seconds=60)]
+            self._download_timestamps = [t for t in self._download_timestamps if now - t < timedelta(seconds=60)]
             
-            if len(RobloxClient._download_timestamps) >= self.downloads_per_min:
-                wait_time = 60 - (now - RobloxClient._download_timestamps[0]).total_seconds()
+            if len(self._download_timestamps) >= self.downloads_per_min:
+                wait_time = 60 - (now - self._download_timestamps[0]).total_seconds()
                 if wait_time > 0:
                     print(f"Read rate limit approaching. Waiting {wait_time:.2f} seconds...")
                     await asyncio.sleep(wait_time)
                 
                 now = datetime.now()
-                RobloxClient._download_timestamps = [t for t in RobloxClient._download_timestamps if now - t < timedelta(seconds=60)]
+                self._download_timestamps = [t for t in self._download_timestamps if now - t < timedelta(seconds=60)]
 
-            RobloxClient._download_timestamps.append(datetime.now())
+            self._download_timestamps.append(datetime.now())
             
         await asyncio.sleep(random.uniform(0.5, 2.0))
 

@@ -15,7 +15,8 @@ import requests # For synchronous range requests during read
 class BloxDriveFUSE(Operations):
     def __init__(self, db_manager):
         self.db = db_manager
-        self.roblox = RobloxClient()
+        from roblox_pool import RobloxPool
+        self.pool = RobloxPool()
         self.chunk_size = config.CHUNK_SIZE_BYTES
         
         # Initialize loop for any async tasks if needed, though FUSE calls are sync
@@ -208,39 +209,17 @@ class BloxDriveFUSE(Operations):
         if self.cache_chunk_id == chunk['id'] and (time.time() - self.cache_time < 300):
             return self.cache_data
 
-        cdn_url = chunk['cdn_url']
-        if not cdn_url:
-            # Resolve URL if missing
-            cdn_url = self.loop.run_until_complete(self.roblox.resolve_cdn_url(chunk['asset_id']))
-            if cdn_url:
-                self.db.update_chunk_cdn_url(chunk['id'], cdn_url)
-            else:
-                return None # Could not resolve
-
         try:
-            # We must download the image to decode it.
-            # While Roblox CDN supports Range requests, the ImageCoder needs the full image 
-            # to decode the pixels back into bytes.
-            # Future Optimization: Since PNGs are compressed, random access into the raw binary
-            # requires streaming the image, decoding it, and then pulling the bytes. 
-            # For now, we fetch the whole 20MB PNG into memory, decode it, and cache it.
-            import requests
-            resp = requests.get(cdn_url, timeout=10)
-            if resp.status_code == 200:
-                encrypted_bytes = ImageCoder.decode(resp.content)
-                from crypto import CryptoManager
-                raw_bytes = CryptoManager.decrypt(encrypted_bytes)
-                
+            raw_bytes = self.loop.run_until_complete(self.pool.fetch_chunk_data(chunk, self.db))
+            if raw_bytes is not None:
                 self.cache_chunk_id = chunk['id']
                 self.cache_data = raw_bytes
                 self.cache_time = time.time()
                 return raw_bytes
-            else:
-                print(f"Failed to fetch CDN: {resp.status_code}")
-                return None
         except Exception as e:
             print(f"Fetch error: {e}")
-            return None
+            
+        return None
 
     def write(self, path, buf, offset, fh):
         info = self.open_files.get(fh)
@@ -273,11 +252,8 @@ class BloxDriveFUSE(Operations):
             self.open_files[fh]['dirty'] = True
         else:
             # Ghost chunk purge
-            chunks = self.db.get_chunks(file_record['id'])
-            for chunk in chunks:
-                if chunk['sequence'] * self.chunk_size >= length:
-                    self.db.delete_chunks(file_record['id']) # This deletes all. We would ideally delete selectively, but since this is complex, we'll just delete chunks and rely on full rewrite. Actually FUSE will use truncate before write, so it's fine.
-                    break
+            start_seq = math.ceil(length / self.chunk_size)
+            self.db.delete_chunks_after(file_record['id'], start_seq)
             
         self.db.update_file_size(file_record['id'], length)
 

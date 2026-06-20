@@ -77,6 +77,60 @@ class DatabaseManager:
                 except Error:
                     pass
 
+                # Add RAID columns to chunks
+                try:
+                    cursor.execute("ALTER TABLE chunks ADD COLUMN account_id INT DEFAULT NULL")
+                    cursor.execute("ALTER TABLE chunks ADD COLUMN chunk_type VARCHAR(10) DEFAULT 'data'")
+                except Error:
+                    pass
+
+                # Accounts table
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS accounts (
+                        id INT AUTO_INCREMENT PRIMARY KEY,
+                        label VARCHAR(100) NOT NULL,
+                        api_key TEXT NOT NULL,
+                        user_id VARCHAR(50) NOT NULL,
+                        auth_token TEXT,
+                        status VARCHAR(20) DEFAULT 'healthy',
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        UNIQUE KEY unique_label (label)
+                    )
+                """)
+
+                # App Settings table
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS app_settings (
+                        key_name VARCHAR(100) PRIMARY KEY,
+                        value TEXT NOT NULL
+                    )
+                """)
+
+                # Raid Stripes table
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS raid_stripes (
+                        id INT AUTO_INCREMENT PRIMARY KEY,
+                        file_id INT NOT NULL,
+                        stripe_index INT NOT NULL,
+                        FOREIGN KEY (file_id) REFERENCES files(id) ON DELETE CASCADE,
+                        UNIQUE KEY unique_stripe (file_id, stripe_index)
+                    )
+                """)
+
+                # Raid Stripe Members table
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS raid_stripe_members (
+                        id INT AUTO_INCREMENT PRIMARY KEY,
+                        stripe_id INT NOT NULL,
+                        chunk_id INT NOT NULL,
+                        role VARCHAR(10) NOT NULL,
+                        account_id INT NOT NULL,
+                        FOREIGN KEY (stripe_id) REFERENCES raid_stripes(id) ON DELETE CASCADE,
+                        FOREIGN KEY (chunk_id) REFERENCES chunks(id) ON DELETE CASCADE,
+                        FOREIGN KEY (account_id) REFERENCES accounts(id)
+                    )
+                """)
+
                 # Metadata columns for POSIX compliance
                 metadata_columns = {
                     "uid": "INT DEFAULT 1000",
@@ -108,12 +162,13 @@ class DatabaseManager:
             file_id = cursor.lastrowid
         return file_id
 
-    def add_chunk(self, file_id, sequence, asset_id, size, cdn_url=None, chunk_hash=None):
+    def add_chunk(self, file_id, sequence, asset_id, size, cdn_url=None, chunk_hash=None, account_id=None, chunk_type='data'):
         with closing(self.get_connection()) as conn, closing(conn.cursor()) as cursor:
             cursor.execute(
-                "INSERT INTO chunks (file_id, sequence, asset_id, size, cdn_url, chunk_hash) VALUES (%s, %s, %s, %s, %s, %s)",
-                (file_id, sequence, asset_id, size, cdn_url, chunk_hash)
+                "INSERT INTO chunks (file_id, sequence, asset_id, size, cdn_url, chunk_hash, account_id, chunk_type) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+                (file_id, sequence, asset_id, size, cdn_url, chunk_hash, account_id, chunk_type)
             )
+            return cursor.lastrowid
 
     def get_file(self, filename):
         with closing(self.get_connection()) as conn, closing(conn.cursor(dictionary=True)) as cursor:
@@ -151,6 +206,11 @@ class DatabaseManager:
     def delete_chunks(self, file_id):
         with closing(self.get_connection()) as conn, closing(conn.cursor()) as cursor:
             cursor.execute("DELETE FROM chunks WHERE file_id = %s", (file_id,))
+            conn.commit()
+
+    def delete_chunks_after(self, file_id, sequence):
+        with closing(self.get_connection()) as conn, closing(conn.cursor()) as cursor:
+            cursor.execute("DELETE FROM chunks WHERE file_id = %s AND sequence >= %s", (file_id, sequence))
             conn.commit()
 
     def delete_folder(self, folder_path):
@@ -201,3 +261,84 @@ class DatabaseManager:
     def update_utimens(self, filename, atime, mtime):
         with closing(self.get_connection()) as conn, closing(conn.cursor()) as cursor:
             cursor.execute("UPDATE files SET atime = %s, mtime = %s WHERE filename = %s", (atime, mtime, filename))
+
+    # --- Accounts and Settings ---
+    def add_account(self, label, api_key, user_id, auth_token):
+        with closing(self.get_connection()) as conn, closing(conn.cursor()) as cursor:
+            cursor.execute(
+                "INSERT INTO accounts (label, api_key, user_id, auth_token) VALUES (%s, %s, %s, %s)",
+                (label, api_key, user_id, auth_token)
+            )
+            return cursor.lastrowid
+
+    def get_accounts(self):
+        with closing(self.get_connection()) as conn, closing(conn.cursor(dictionary=True)) as cursor:
+            cursor.execute("SELECT * FROM accounts ORDER BY id ASC")
+            return cursor.fetchall()
+
+    def get_healthy_accounts(self):
+        with closing(self.get_connection()) as conn, closing(conn.cursor(dictionary=True)) as cursor:
+            cursor.execute("SELECT * FROM accounts WHERE status = 'healthy' ORDER BY id ASC")
+            return cursor.fetchall()
+
+    def update_account_status(self, account_id, status):
+        with closing(self.get_connection()) as conn, closing(conn.cursor()) as cursor:
+            cursor.execute("UPDATE accounts SET status = %s WHERE id = %s", (status, account_id))
+
+    def remove_account(self, account_id):
+        with closing(self.get_connection()) as conn, closing(conn.cursor()) as cursor:
+            cursor.execute("DELETE FROM accounts WHERE id = %s", (account_id,))
+
+    def get_setting(self, key_name, default=None):
+        with closing(self.get_connection()) as conn, closing(conn.cursor(dictionary=True)) as cursor:
+            cursor.execute("SELECT value FROM app_settings WHERE key_name = %s", (key_name,))
+            result = cursor.fetchone()
+            if result:
+                return result['value']
+            return default
+
+    def set_setting(self, key_name, value):
+        with closing(self.get_connection()) as conn, closing(conn.cursor()) as cursor:
+            cursor.execute(
+                "INSERT INTO app_settings (key_name, value) VALUES (%s, %s) ON DUPLICATE KEY UPDATE value = %s",
+                (key_name, value, value)
+            )
+
+    # --- RAID ---
+    def add_raid_stripe(self, file_id, stripe_index):
+        with closing(self.get_connection()) as conn, closing(conn.cursor()) as cursor:
+            cursor.execute(
+                "INSERT INTO raid_stripes (file_id, stripe_index) VALUES (%s, %s)",
+                (file_id, stripe_index)
+            )
+            return cursor.lastrowid
+
+    def add_stripe_member(self, stripe_id, chunk_id, role, account_id):
+        with closing(self.get_connection()) as conn, closing(conn.cursor()) as cursor:
+            cursor.execute(
+                "INSERT INTO raid_stripe_members (stripe_id, chunk_id, role, account_id) VALUES (%s, %s, %s, %s)",
+                (stripe_id, chunk_id, role, account_id)
+            )
+
+    def get_stripe_for_chunk(self, chunk_id):
+        with closing(self.get_connection()) as conn, closing(conn.cursor(dictionary=True)) as cursor:
+            cursor.execute("SELECT stripe_id FROM raid_stripe_members WHERE chunk_id = %s", (chunk_id,))
+            result = cursor.fetchone()
+            if not result:
+                return None
+            
+            stripe_id = result['stripe_id']
+            cursor.execute("SELECT * FROM raid_stripes WHERE id = %s", (stripe_id,))
+            stripe = cursor.fetchone()
+            
+            cursor.execute("SELECT * FROM raid_stripe_members WHERE stripe_id = %s", (stripe_id,))
+            members = cursor.fetchall()
+            
+            stripe['members'] = members
+            return stripe
+
+    def get_chunks_on_account(self, account_id):
+        with closing(self.get_connection()) as conn, closing(conn.cursor(dictionary=True)) as cursor:
+            cursor.execute("SELECT * FROM chunks WHERE account_id = %s", (account_id,))
+            return cursor.fetchall()
+
