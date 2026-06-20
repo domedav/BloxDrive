@@ -11,3 +11,6 @@ auth.json
 /bloxdrive_spool/
 release.sh
 .coverage
+.pytest_cache/
+htmlcov/
+.DS_Store
