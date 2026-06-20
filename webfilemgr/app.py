@@ -72,16 +72,28 @@ async def handle_delete(request):
     is_folder = request.query.get('is_folder') == 'true'
     db = DatabaseManager()
     
-    if is_folder:
-        db.delete_folder(filename)
+    try:
+        if is_folder:
+            # Explicitly delete chunks for every file in the folder first,
+            # in case ON DELETE CASCADE is not active on this DB.
+            all_files = db.list_files()
+            prefix = filename + "/"
+            for f in all_files:
+                if f['filename'].startswith(prefix):
+                    db.delete_chunks(f['id'])
+            db.delete_folder(filename)
+            return web.json_response({"success": True})
+            
+        file_record = db.get_file(filename)
+        if not file_record:
+            return web.json_response({"error": "Not found"}, status=404)
+            
+        db.delete_chunks(file_record['id'])
+        db.delete_file(filename)
         return web.json_response({"success": True})
-        
-    file_record = db.get_file(filename)
-    if not file_record:
-        return web.json_response({"error": "Not found"}, status=404)
-        
-    db.delete_file(filename)
-    return web.json_response({"success": True})
+    except Exception as e:
+        print(f"Delete failed for '{filename}': {e}")
+        return web.json_response({"error": str(e)}, status=500)
 
 async def handle_upload(request):
     reader = await request.multipart()
@@ -118,7 +130,14 @@ async def handle_upload(request):
     if not filepath:
         return web.json_response({"error": "No file uploaded"}, status=400)
             
-    # Trigger upload
+    # If the file already exists, delete the old record so upload_file
+    # doesn't silently refuse to overwrite it.
+    db = DatabaseManager()
+    existing = db.get_file(filename)
+    if existing:
+        db.delete_chunks(existing['id'])
+        db.delete_file(filename)
+    
     from main import upload_file
     
     try:
@@ -215,32 +234,8 @@ async def handle_download_zip(request):
                     await loop.run_in_executor(None, zipf.writestr, f['filename'], b'')
                     continue
                 
-                # Wait, zipf.open does not support async context managers
-                # So we fetch all chunks into memory first, then write them. For massive files this is bad.
-                # Since we already fixed FUSE stream-to-disk OOM vulnerability in an earlier iteration, we need to respect it.
-                # Actually, zipf.writestr is fine for small files, but large files need to be streamed.
-                # Let's write directly to zipf in thread!
-                # Instead of holding zipf open async, let's write chunks one by one in the thread.
-                for chunk in chunks:
-                    cdn_url = chunk['cdn_url']
-                    if not cdn_url:
-                        cdn_url = await roblox.resolve_cdn_url(chunk['asset_id'])
-                        if cdn_url: db.update_chunk_cdn_url(chunk['id'], cdn_url)
-                        else: raise web.HTTPInternalServerError(reason="Failed to resolve chunk URL")
-                    async with session.get(cdn_url) as resp:
-                        if resp.status == 200:
-                            image_bytes = await resp.read()
-                            enc_data = await loop.run_in_executor(None, ImageCoder.decode, image_bytes)
-                            dec_data = await loop.run_in_executor(None, CryptoManager.decrypt, enc_data)
-                            
-                            # We use append mode zip writestr because zipfile stream requires synchronous with open().
-                            # Since we don't want to block, we just append to the zip!
-                            # Wait, Python's zipfile allows `zipf.open` to stream! We'll just load the whole file locally and then add it.
-                            # Since this is complex, we just use zipf.writestr. For OOM we should stream, but I will just write all chunks to a temp file and write to zip.
-                            pass
-                            
-                # Simpler implementation: We write chunks to a temporary file locally, then add to zip.
-                # This guarantees no OOM!
+                # Write chunks to a temporary file locally, then add to zip.
+                # This avoids holding all chunk data in memory (OOM-safe).
                 temp_chunk_file = temp_zip_path + f"_{f['id']}.tmp"
                 try:
                     with open(temp_chunk_file, 'wb') as tcf:

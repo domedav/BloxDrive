@@ -303,19 +303,15 @@ class BloxDriveFUSE(Operations):
         return fh
 
     def flush(self, path, fh):
-        print(f"DEBUG FLUSH CALLED: path={path}, fh={fh}")
         info = self.open_files.get(fh)
-        print(f"DEBUG FLUSH INFO: {info}")
         if info and info['dirty'] and info['path']:
             filename = info['filename']
             file_record = self.db.get_file(filename)
-            print(f"DEBUG FLUSH FILE_RECORD: {file_record}")
             if not file_record:
                 return 0 # deleted
                 
             from main import upload_file
             try:
-                print("DEBUG FLUSH CALLING UPLOAD_FILE")
                 self.loop.run_until_complete(upload_file(info['path'], filename_override=filename, file_id_override=file_record['id']))
                 info['dirty'] = False
             except Exception as e:
