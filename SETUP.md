@@ -70,3 +70,12 @@ If you need to switch accounts or refresh an expired cookie:
 ```bash
 ./bloxdrive.sh auth
 ```
+
+## 6. RAID-5 Multi-Account Setup
+BloxDrive uses an advanced RAID-5 style XOR parity system to protect your data. If you only link 1 account, you risk losing all your data if that account is banned. **We highly recommend adding multiple accounts.**
+
+**To link additional accounts:**
+1. Open the Web UI (`./bloxdrive.sh web`) and click **🛡️ RAID Settings** > **Add Account**.
+2. Or use the CLI command: `./bloxdrive.sh raid add`
+
+The Setup Wizard seamlessly supports authenticating multiple accounts. Once multiple accounts are linked, your files will be striped across all of them automatically!

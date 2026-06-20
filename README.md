@@ -13,6 +13,14 @@
 3. **AES-256-GCM Encryption**: Every file is mathematically encrypted locally using a unique `ENCRYPTION_KEY` before it touches the internet. 
 4. **Convergent Deduplication**: Saves bandwidth! Identical files perfectly bypass upload while retaining full AES-256 encryption.
 5. **Mobile Web UI**: Stream your encrypted files straight to your phone with the built-in async Web File Manager (bypassing the local hard drive entirely).
+6. **RAID-5 Multi-Account Redundancy**: Link up to 8 Roblox accounts to split the load and generate XOR parity. If an account is banned, your data is 100% safe and perfectly recoverable!
+
+## 🛡️ RAID-5 Redundancy
+BloxDrive uses an advanced RAID-5 style XOR parity system to protect your data. By adding multiple Roblox accounts, your files are striped across all accounts. If one account is banned or deleted by Roblox, the system will automatically fall back to parity reconstruction, allowing you to access and download your files without any data loss.
+
+1. **Add Accounts**: Run `./bloxdrive.sh raid add` to link a new Roblox account, or simply add them through the Web UI's RAID Settings! The Setup Wizard seamlessly supports adding multiple accounts.
+2. **Protect Existing Files**: Run `./bloxdrive.sh raid protect` to migrate all your old files into the new RAID pool.
+3. **Recover**: If an account dies, simply use `./bloxdrive.sh raid recover` to rebuild the missing pieces onto a new healthy account.
 
 ## 🚀 Quick Start
 Read the `SETUP.md` file for full installation instructions.

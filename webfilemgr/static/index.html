@@ -451,7 +451,12 @@
 <body>
     <header>
         <div class="brand">☁️ BloxDrive</div>
-        <div class="stats"><span id="fileCount">0</span> items total</div>
+        <div style="display: flex; gap: 1rem; align-items: center;">
+            <div class="stats"><span id="fileCount">0</span> items total</div>
+            <button onclick="showRaidModal()" style="padding: 0.4rem 0.8rem; border-radius: 20px; border: 1px solid var(--border); background: rgba(255,255,255,0.05);">
+                🛡️ RAID Settings
+            </button>
+        </div>
     </header>
 
     <!-- Fullscreen Drop Zone -->
@@ -532,6 +537,41 @@
             <div class="modal-actions">
                 <button onclick="closeModal('folderModal')">Cancel</button>
                 <button class="btn-primary" onclick="submitNewFolder()">Create</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="raidModal">
+        <div class="modal">
+            <h2>🛡️ RAID Settings</h2>
+            
+            <div style="margin-bottom: 1rem; padding: 1rem; background: rgba(0,0,0,0.2); border-radius: 8px; border: 1px solid var(--border);">
+                <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+                    <span>Status:</span>
+                    <span id="raidStatusBadge" style="font-weight: bold; color: var(--danger);">Disabled</span>
+                </div>
+                <div style="display: flex; justify-content: space-between;">
+                    <span>Accounts:</span>
+                    <span id="raidAccountCount" style="font-weight: bold;">1</span>
+                </div>
+            </div>
+            
+            <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.5rem;">Configured Accounts:</div>
+            <div id="raidAccountsList" style="max-height: 150px; overflow-y: auto; margin-bottom: 1.5rem; border: 1px solid var(--border); border-radius: 8px; background: rgba(0,0,0,0.2);">
+                <!-- Accounts listed here -->
+            </div>
+            
+            <div id="raidWarning" style="display: none; font-size: 0.8rem; color: #fbbf24; margin-bottom: 1.5rem; background: rgba(251, 191, 36, 0.1); padding: 0.75rem; border-radius: 8px; border: 1px solid rgba(251, 191, 36, 0.3);">
+                ⚠️ You only have 1 account linked! We highly recommend adding more accounts to enable RAID-5 redundancy. If your single account gets banned, your data will be permanently lost.
+            </div>
+            
+            <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 1.5rem;">
+                Adding more accounts enables RAID-5 redundancy. If one account is banned or deleted, your data is completely recoverable.
+            </div>
+
+            <div class="modal-actions">
+                <button onclick="closeModal('raidModal')">Close</button>
+                <button class="btn-primary" onclick="addRaidAccount()">Add Account</button>
             </div>
         </div>
     </div>
@@ -790,6 +830,68 @@
             
             closeModal('folderModal');
             fetchFiles();
+        }
+
+        // RAID functionality
+        async function fetchRaidStatus() {
+            try {
+                const res = await fetch('/api/raid/status');
+                const data = await res.json();
+                
+                const badge = document.getElementById('raidStatusBadge');
+                if (data.raid_enabled) {
+                    badge.textContent = `RAID-${data.total_accounts} Enabled`;
+                    badge.style.color = '#10b981'; // green
+                    document.getElementById('raidWarning').style.display = 'none';
+                } else {
+                    badge.textContent = 'Disabled (No Redundancy)';
+                    badge.style.color = '#ef4444'; // red
+                    document.getElementById('raidWarning').style.display = 'block';
+                }
+                
+                document.getElementById('raidAccountCount').textContent = data.total_accounts;
+                
+                const list = document.getElementById('raidAccountsList');
+                if (data.accounts.length === 0) {
+                    list.innerHTML = '<div style="padding: 0.5rem; text-align: center; color: var(--text-muted);">Using default config.py (Legacy)</div>';
+                } else {
+                    let html = '';
+                    data.accounts.forEach(acc => {
+                        html += `
+                            <div style="padding: 0.5rem 1rem; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 0.5rem;">
+                                <span>👤</span> ${acc.label}
+                            </div>
+                        `;
+                    });
+                    list.innerHTML = html;
+                }
+            } catch (err) {
+                console.error("Failed to fetch RAID status");
+            }
+        }
+
+        async function showRaidModal() {
+            await fetchRaidStatus();
+            openModal('raidModal');
+        }
+
+        async function addRaidAccount() {
+            try {
+                const res = await fetch('/api/raid/add', { method: 'POST' });
+                const data = await res.json();
+                if (data.success) {
+                    const host = window.location.hostname;
+                    const port = data.port;
+                    closeModal('raidModal');
+                    // Open setup wizard in new tab
+                    window.open(`http://${host}:${port}`, '_blank');
+                    
+                    // Show message
+                    alert("Setup wizard opened in new tab. After completing setup, close the tab and refresh this page to see your new RAID account.");
+                }
+            } catch (err) {
+                alert("Error starting setup wizard.");
+            }
         }
 
         function openRenameModal(displayName, isFolder, fullFilename = '') {
