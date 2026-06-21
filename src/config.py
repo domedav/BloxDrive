@@ -59,7 +59,9 @@ if not DB_PASS:
 
 # Storage Configuration
 CHUNK_SIZE_MB = _settings.get("CHUNK_SIZE_MB", 8)
-CHUNK_SIZE_BYTES = CHUNK_SIZE_MB * 1024 * 1024
+# Roblox resizes images larger than 1024x1024, which limits the safe chunk size to 750 KB.
+# We cap CHUNK_SIZE_BYTES at 750 * 1024 to ensure LSB data integrity.
+CHUNK_SIZE_BYTES = min(int(CHUNK_SIZE_MB * 1024 * 1024), 750 * 1024)
 RATE_LIMIT_UPLOADS_PER_MIN = _settings.get("RATE_LIMIT_UPLOADS_PER_MIN", 15)
 RATE_LIMIT_DOWNLOADS_PER_MIN = _settings.get("RATE_LIMIT_DOWNLOADS_PER_MIN", 60)
 

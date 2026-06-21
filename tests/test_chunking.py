@@ -71,5 +71,74 @@ def test_chunking():
     fuse.unlink(test_path)
     print("Multi-Chunk Test Completed Successfully!")
 
+def test_legacy_chunk_retrieval():
+    print("--- Testing Legacy Chunk Retrieval and Parity Filtering ---")
+    db = DatabaseManager()
+    
+    # 1. Create a dummy file
+    filename = "legacy_test_file.bin"
+    file_id = db.add_file(filename, 300)
+    
+    try:
+        # 2. Add chunks with different chunk_types
+        # Sequence 0: 'data'
+        db.add_chunk(
+            file_id=file_id,
+            sequence=0,
+            asset_id="asset_data",
+            size=100,
+            cdn_url=None,
+            chunk_hash="hash_data",
+            account_id=1,
+            chunk_type="data"
+        )
+        # Sequence 1: None (legacy NULL chunk)
+        db.add_chunk(
+            file_id=file_id,
+            sequence=1,
+            asset_id="asset_legacy",
+            size=100,
+            cdn_url=None,
+            chunk_hash="hash_legacy",
+            account_id=1,
+            chunk_type=None
+        )
+        # Sequence 2: 'parity'
+        db.add_chunk(
+            file_id=file_id,
+            sequence=2,
+            asset_id="asset_parity",
+            size=100,
+            cdn_url=None,
+            chunk_hash="hash_parity",
+            account_id=1,
+            chunk_type="parity"
+        )
+        
+        # 3. Retrieve chunks with include_parity=False (default)
+        data_chunks = db.get_chunks(file_id, include_parity=False)
+        assert len(data_chunks) == 2, f"Expected 2 data chunks, got {len(data_chunks)}"
+        
+        sequences = [c['sequence'] for c in data_chunks]
+        assert 0 in sequences, "Sequence 0 (data) missing"
+        assert 1 in sequences, "Sequence 1 (legacy NULL) missing"
+        assert 2 not in sequences, "Sequence 2 (parity) was incorrectly included in data chunks"
+        
+        # 4. Retrieve chunks with include_parity=True
+        all_chunks = db.get_chunks(file_id, include_parity=True)
+        assert len(all_chunks) == 3, f"Expected 3 chunks, got {len(all_chunks)}"
+        
+        all_sequences = [c['sequence'] for c in all_chunks]
+        assert 0 in all_sequences
+        assert 1 in all_sequences
+        assert 2 in all_sequences
+        
+        print("Legacy Chunk Retrieval and Parity Filtering: PASS")
+        
+    finally:
+        # Cleanup
+        db.delete_file(filename)
+
 if __name__ == "__main__":
     test_chunking()
+    test_legacy_chunk_retrieval()

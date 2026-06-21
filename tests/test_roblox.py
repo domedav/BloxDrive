@@ -282,3 +282,23 @@ async def test_wait_for_rate_limit_mocked(client, monkeypatch):
     
     # It should have called asyncio.sleep multiple times (random sleep + rate limit delay)
     assert sleep_calls >= 3
+
+@pytest.mark.asyncio
+async def test_resolve_cdn_url_non_200_failure(client, aresponses):
+    # Setup mock routes for 3 attempts
+    for _ in range(3):
+        aresponses.add_route('GET', 
+            "https://assetdelivery.roblox.com/v2/assetId/123",
+            status=200,
+            json_data={"locations": [{"location": "https://cdn.example.com/bad_asset123"}]}
+        )
+        # The decal check on the CDN url returns 404 Not Found
+        aresponses.add_route('GET', 
+            "https://cdn.example.com/bad_asset123",
+            status=404,
+            bytes_data=b"not found"
+        )
+    
+    url = await client.resolve_cdn_url("123")
+    assert url is None
+

@@ -234,13 +234,16 @@ class RobloxClient:
                         async with session.get(cdn_url) as cdn_resp:
                             if cdn_resp.status == 200:
                                 content = await cdn_resp.read()
-                                if b'<roblox xmlns:xmime=' in content[:50]:
+                                if b'<roblox' in content[:200]:
                                     import re
-                                    match = re.search(br'id=(\d+)', content)
+                                    match = re.search(br'<url>[\s\S]*?id=(\d+)', content)
                                     if match:
                                         image_id = match.group(1).decode()
                                         return await self.resolve_cdn_url(image_id)
-                        return cdn_url
+                                return cdn_url
+                            else:
+                                print(f"Resolve CDN: target content check returned status {cdn_resp.status}")
+                                continue
             except aiohttp.ClientError as e:
                 print(f"Network error resolving CDN: {e}")
                 await asyncio.sleep(2)

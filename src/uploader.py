@@ -138,10 +138,23 @@ async def upload_file(filepath: str, filename_override: str = None, file_id_over
                         os.remove(tmp_png_parity)
 
         # Upload successful. Swap files.
-        if existing:
-            db.delete_chunks(existing['id'])
-            db.delete_file_by_id(existing['id'])
-        db.rename_file(temp_filename, filename)
+        conn = db.get_connection()
+        conn.autocommit = False
+        try:
+            cursor = conn.cursor()
+            try:
+                if existing:
+                    cursor.execute("DELETE FROM chunks WHERE file_id = %s", (existing['id'],))
+                    cursor.execute("DELETE FROM files WHERE id = %s", (existing['id'],))
+                cursor.execute("UPDATE files SET filename = %s WHERE filename = %s", (filename, temp_filename))
+                conn.commit()
+            finally:
+                cursor.close()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
         print(f"Upload complete: {filename}")
         
     except Exception as e:

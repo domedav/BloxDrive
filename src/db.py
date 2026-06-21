@@ -181,13 +181,16 @@ class DatabaseManager:
 
     def get_chunk_by_hash(self, chunk_hash):
         with closing(self.get_connection()) as conn, closing(conn.cursor(dictionary=True)) as cursor:
-            cursor.execute("SELECT * FROM chunks WHERE chunk_hash = %s LIMIT 1", (chunk_hash,))
+            cursor.execute("SELECT * FROM chunks WHERE chunk_hash = %s AND chunk_type = 'data' LIMIT 1", (chunk_hash,))
             result = cursor.fetchone()
         return result
 
-    def get_chunks(self, file_id):
+    def get_chunks(self, file_id, include_parity=False):
         with closing(self.get_connection()) as conn, closing(conn.cursor(dictionary=True)) as cursor:
-            cursor.execute("SELECT * FROM chunks WHERE file_id = %s ORDER BY sequence", (file_id,))
+            if include_parity:
+                cursor.execute("SELECT * FROM chunks WHERE file_id = %s ORDER BY sequence", (file_id,))
+            else:
+                cursor.execute("SELECT * FROM chunks WHERE file_id = %s AND (chunk_type != 'parity' OR chunk_type IS NULL) ORDER BY sequence", (file_id,))
             result = cursor.fetchall()
         return result
 
@@ -200,6 +203,7 @@ class DatabaseManager:
     def update_chunk_cdn_url(self, chunk_id, cdn_url):
         with closing(self.get_connection()) as conn, closing(conn.cursor()) as cursor:
             cursor.execute("UPDATE chunks SET cdn_url = %s WHERE id = %s", (cdn_url, chunk_id))
+            conn.commit()
 
     def delete_file(self, filename):
         with closing(self.get_connection()) as conn, closing(conn.cursor()) as cursor:
@@ -231,10 +235,12 @@ class DatabaseManager:
     def update_file_size(self, file_id, size):
         with closing(self.get_connection()) as conn, closing(conn.cursor()) as cursor:
             cursor.execute("UPDATE files SET size = %s WHERE id = %s", (size, file_id))
+            conn.commit()
 
     def rename_file(self, old_filename, new_filename):
         with closing(self.get_connection()) as conn, closing(conn.cursor()) as cursor:
             cursor.execute("UPDATE files SET filename = %s WHERE filename = %s", (new_filename, old_filename))
+            conn.commit()
 
     def rename_folder(self, old_folder_path, new_folder_path):
         with closing(self.get_connection()) as conn, closing(conn.cursor()) as cursor:
@@ -250,6 +256,7 @@ class DatabaseManager:
                 SET filename = CONCAT(%s, SUBSTRING(filename, CHAR_LENGTH(%s) + 1))
                 WHERE filename LIKE %s
             """, (new_prefix, prefix, like_prefix))
+            conn.commit()
     def is_folder(self, folder_path):
         with closing(self.get_connection()) as conn, closing(conn.cursor()) as cursor:
             prefix = folder_path + "/"

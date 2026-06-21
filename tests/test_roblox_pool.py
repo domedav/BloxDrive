@@ -213,3 +213,54 @@ async def test_fetch_chunk_data_recovery_path(pool, tmp_path):
         recovered_data = await pool.fetch_chunk_data(chunk_to_fetch, mock_db_manager, session=session)
     
     assert recovered_data == data1
+
+@pytest.mark.asyncio
+async def test_fetch_chunk_data_expired_cdn_retry(pool, tmp_path):
+    # Setup
+    plaintext = b"expired_cdn_retry_data"
+    encrypted = CryptoManager.encrypt(plaintext)
+    encoded_image_path = str(tmp_path / "img_retry.png")
+    ImageCoder.encode(encrypted, encoded_image_path)
+    with open(encoded_image_path, 'rb') as f:
+        encoded_image = f.read()
+
+    chunk = {'id': 100, 'account_id': 1, 'asset_id': 'asset1', 'cdn_url': 'http://old-expired-cdn/100'}
+
+    mock_db_manager = MagicMock()
+    # Track calls to update_chunk_cdn_url
+    updated_urls = []
+    def mock_update(chunk_id, url):
+        updated_urls.append((chunk_id, url))
+    mock_db_manager.update_chunk_cdn_url = mock_update
+
+    class MockResponse:
+        def __init__(self, content, status=200):
+            self.content = content
+            self.status = status
+        async def __aenter__(self): return self
+        async def __aexit__(self, *args): pass
+        async def read(self): return self.content
+
+    class MockSession:
+        def __init__(self):
+            self.closed = False
+        def get(self, url):
+            if url == 'http://old-expired-cdn/100':
+                # First call returns 403 Forbidden
+                return MockResponse(b"Forbidden", status=403)
+            elif url == 'http://fresh-cdn/100':
+                # Second call on new resolved URL returns 200 OK
+                return MockResponse(encoded_image, status=200)
+            return MockResponse(b"not found", status=404)
+        async def close(self):
+            self.closed = True
+
+    session = MockSession()
+
+    with patch.object(pool.clients[1], 'resolve_cdn_url', return_value='http://fresh-cdn/100') as mock_resolve:
+        data = await pool.fetch_chunk_data(chunk, mock_db_manager, session=session)
+
+    assert data == plaintext
+    mock_resolve.assert_called_once_with('asset1')
+    # Should have updated DB: first to None, then to http://fresh-cdn/100
+    assert updated_urls == [(100, None), (100, 'http://fresh-cdn/100')]

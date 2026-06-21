@@ -14,6 +14,18 @@ fi
 
 VERSION=$1
 
+echo "⚠️  WARNING: Preparing release for $VERSION..."
+
+# Warning check: warn if there are uncommitted changes
+if ! git diff-index --quiet HEAD --; then
+    echo "🚨 Warning: You have uncommitted or unstaged changes in your repository!"
+    read -p "Are you sure you want to proceed with release $VERSION? (y/N): " confirm
+    if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
+        echo "❌ Release aborted by user."
+        exit 1
+    fi
+fi
+
 echo "📦 Preparing release for $VERSION..."
 
 # Ensure we are up to date and pushed first

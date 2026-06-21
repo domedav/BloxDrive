@@ -131,9 +131,12 @@ class RobloxPool:
         client = self.get_client(chunk['account_id'])
         if client:
             try:
-                cdn_url = chunk['cdn_url'] or await client.resolve_cdn_url(chunk['asset_id'])
-                if not chunk['cdn_url'] and cdn_url:
-                    db.update_chunk_cdn_url(chunk['id'], cdn_url)
+                cdn_url = chunk['cdn_url']
+                is_cached = bool(cdn_url)
+                if not cdn_url:
+                    cdn_url = await client.resolve_cdn_url(chunk['asset_id'])
+                    if cdn_url:
+                        db.update_chunk_cdn_url(chunk['id'], cdn_url)
                     
                 if cdn_url:
                     # Fetch
@@ -148,6 +151,17 @@ class RobloxPool:
                                 image_bytes = await resp.read()
                                 encrypted = ImageCoder.decode(image_bytes)
                                 return CryptoManager.decrypt(encrypted)
+                            elif is_cached:
+                                # CDN URL might have expired, clear cache and re-resolve
+                                db.update_chunk_cdn_url(chunk['id'], None)
+                                fresh_url = await client.resolve_cdn_url(chunk['asset_id'])
+                                if fresh_url:
+                                    db.update_chunk_cdn_url(chunk['id'], fresh_url)
+                                    async with session.get(fresh_url) as retry_resp:
+                                        if retry_resp.status == 200:
+                                            image_bytes = await retry_resp.read()
+                                            encrypted = ImageCoder.decode(image_bytes)
+                                            return CryptoManager.decrypt(encrypted)
                     finally:
                         if close_session:
                             await session.close()
