@@ -15,42 +15,46 @@ class RaidMigration:
             print("RAID is not enabled. Add more accounts first using 'python3 src/main.py raid add'.")
             return
 
-        print("Scanning for files that need RAID migration...")
-        files = self.db.list_files()
-        
-        migrated_count = 0
-        for f in files:
-            if f['filename'].endswith('.keep'):
-                continue
-                
-            if f['size'] == 0:
-                continue
-
-            chunks = self.db.get_chunks(f['id'])
-            if not chunks:
-                continue
-                
-            # Check if it needs migration
-            # A file needs migration if it has no RAID stripes, or if any of its chunks lack RAID protection
-            stripes = self.db.get_stripes_for_file(f['id'])
-            needs_migration = False
-            if not stripes:
-                needs_migration = True
-            else:
-                for c in chunks:
-                    if c.get('account_id') is None or c.get('account_id') == -1 or c.get('chunk_type') is None:
-                        needs_migration = True
-                        break
+        try:
+            print("Scanning for files that need RAID migration...")
+            files = self.db.list_files()
+            
+            migrated_count = 0
+            for f in files:
+                if f['filename'].endswith('.keep'):
+                    continue
                     
-            if needs_migration:
-                print(f"Migrating '{f['filename']}' ({f['size']} bytes) to RAID-{self.pool.n}...")
-                await self._migrate_file(f, chunks)
-                migrated_count += 1
-                
-        if migrated_count == 0:
-            print("All files are fully protected. No migration needed.")
-        else:
-            print(f"Migration complete. Migrated {migrated_count} files to RAID-{self.pool.n}.")
+                if f['size'] == 0:
+                    continue
+    
+                chunks = self.db.get_chunks(f['id'])
+                if not chunks:
+                    continue
+                    
+                # Check if it needs migration
+                # A file needs migration if it has no RAID stripes, or if any of its chunks lack RAID protection
+                stripes = self.db.get_stripes_for_file(f['id'])
+                needs_migration = False
+                if not stripes:
+                    needs_migration = True
+                else:
+                    for c in chunks:
+                        if c.get('account_id') is None or c.get('account_id') == -1 or c.get('chunk_type') is None:
+                            needs_migration = True
+                            break
+                        
+                if needs_migration:
+                    print(f"Migrating '{f['filename']}' ({f['size']} bytes) to RAID-{self.pool.n}...")
+                    await self._migrate_file(f, chunks)
+                    migrated_count += 1
+                    
+            if migrated_count == 0:
+                print("All files are fully protected. No migration needed.")
+            else:
+                print(f"Migration complete. Migrated {migrated_count} files to RAID-{self.pool.n}.")
+        finally:
+            from roblox import RobloxClient
+            await RobloxClient.close_session()
 
     async def _migrate_file(self, file_record, chunks):
         tmp_path = f"/tmp/bloxdrive_migrate_{file_record['id']}.tmp"

@@ -179,9 +179,9 @@ class DatabaseManager:
             result = cursor.fetchone()
         return result
 
-    def get_chunk_by_hash(self, chunk_hash):
+    def get_chunk_by_hash(self, chunk_hash, account_id):
         with closing(self.get_connection()) as conn, closing(conn.cursor(dictionary=True)) as cursor:
-            cursor.execute("SELECT * FROM chunks WHERE chunk_hash = %s AND chunk_type = 'data' LIMIT 1", (chunk_hash,))
+            cursor.execute("SELECT * FROM chunks WHERE chunk_hash = %s AND account_id = %s AND chunk_type = 'data' LIMIT 1", (chunk_hash, account_id))
             result = cursor.fetchone()
         return result
 

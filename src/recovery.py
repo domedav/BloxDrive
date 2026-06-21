@@ -81,43 +81,47 @@ class RaidRecovery:
             print("RAID is not enabled. Cannot recover.")
             return
             
-        print("Scanning for degraded files...")
-        
-        files = self.db.list_files()
-        active_account_ids = set(self.pool.account_ids)
-        
-        degraded_files = []
-        for f in files:
-            if f['size'] == 0: continue
-            stripes = self.db.get_stripes_for_file(f['id'])
-            if not stripes: continue
+        try:
+            print("Scanning for degraded files...")
             
-            for stripe in stripes:
-                missing = sum(1 for m in stripe['members'] if m['account_id'] not in active_account_ids)
-                if missing == 1:
-                    degraded_files.append(f)
-                    break
-                    
-        if not degraded_files:
-            print("No degraded files found. Everything is healthy.")
-            return
+            files = self.db.list_files()
+            active_account_ids = set(self.pool.account_ids)
             
-        print(f"Found {len(degraded_files)} degraded files.")
-        
-        from raid_migration import RaidMigration
-        migration = RaidMigration()
-        
-        recovered = 0
-        for f in degraded_files:
-            print(f"Recovering '{f['filename']}'...")
-            chunks = self.db.get_chunks(f['id'])
-            try:
-                await migration._migrate_file(f, chunks)
-                recovered += 1
-            except Exception as e:
-                print(f"  Failed to recover '{f['filename']}': {e}")
+            degraded_files = []
+            for f in files:
+                if f['size'] == 0: continue
+                stripes = self.db.get_stripes_for_file(f['id'])
+                if not stripes: continue
                 
-        print(f"\nRecovery complete. Successfully rebuilt {recovered} out of {len(degraded_files)} files.")
+                for stripe in stripes:
+                    missing = sum(1 for m in stripe['members'] if m['account_id'] not in active_account_ids)
+                    if missing == 1:
+                        degraded_files.append(f)
+                        break
+                        
+            if not degraded_files:
+                print("No degraded files found. Everything is healthy.")
+                return
+                
+            print(f"Found {len(degraded_files)} degraded files.")
+            
+            from raid_migration import RaidMigration
+            migration = RaidMigration()
+            
+            recovered = 0
+            for f in degraded_files:
+                print(f"Recovering '{f['filename']}'...")
+                chunks = self.db.get_chunks(f['id'])
+                try:
+                    await migration._migrate_file(f, chunks)
+                    recovered += 1
+                except Exception as e:
+                    print(f"  Failed to recover '{f['filename']}': {e}")
+                    
+            print(f"\nRecovery complete. Successfully rebuilt {recovered} out of {len(degraded_files)} files.")
+        finally:
+            from roblox import RobloxClient
+            await RobloxClient.close_session()
 
 if __name__ == "__main__":
     asyncio.run(RaidRecovery().print_health())

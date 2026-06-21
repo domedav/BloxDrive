@@ -249,3 +249,10 @@ class RobloxClient:
                 await asyncio.sleep(2)
         
         return None
+
+    @classmethod
+    async def close_session(cls):
+        """Closes the shared aiohttp ClientSession if open."""
+        if cls._session and not cls._session.closed:
+            await cls._session.close()
+            cls._session = None

@@ -55,7 +55,7 @@ async def upload_file(filepath: str, filename_override: str = None, file_id_over
                 
                 # SHA-256 for secure dedup
                 chunk_hash = hashlib.sha256(encrypted_data).hexdigest()
-                existing_chunk = db.get_chunk_by_hash(chunk_hash)
+                existing_chunk = db.get_chunk_by_hash(chunk_hash, data_account_id)
                 
                 if existing_chunk:
                     print(f"  [{seq+1}/{total_chunks}] Chunk duplicated! Reusing asset ID: {existing_chunk['asset_id']}")
@@ -162,3 +162,6 @@ async def upload_file(filepath: str, filename_override: str = None, file_id_over
         db.delete_chunks(file_id)
         db.delete_file_by_id(file_id)
         raise
+    finally:
+        from roblox import RobloxClient
+        await RobloxClient.close_session()
