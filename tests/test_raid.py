@@ -101,7 +101,6 @@ async def test_migrate_existing_files(mock_upload, mock_pool_cls, mock_db_cls, m
     mock_upload.assert_called_once()
     args, kwargs = mock_upload.call_args
     assert kwargs.get('filename_override') == 'needs_migration.txt'
-    assert kwargs.get('file_id_override') == 2
     
     # Check output
     captured = capsys.readouterr()

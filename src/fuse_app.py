@@ -11,6 +11,7 @@ from encoder import ImageCoder
 import config
 import time
 import requests # For synchronous range requests during read
+import threading
 
 class BloxDriveFUSE(Operations):
     def __init__(self, db_manager):
@@ -31,6 +32,8 @@ class BloxDriveFUSE(Operations):
         os.makedirs(self.spool_dir, exist_ok=True)
         self.open_files = {} # fh -> {'path': spool_path, 'dirty': bool, 'filename': str}
         self.next_fh = 1
+        self.fh_lock = threading.Lock()
+        self.cache_lock = threading.Lock()
 
     # --- Filesystem Methods ---
 
@@ -139,8 +142,9 @@ class BloxDriveFUSE(Operations):
             raise FuseOSError(errno.ENOENT)
         
         import uuid
-        fh = self.next_fh
-        self.next_fh += 1
+        with self.fh_lock:
+            fh = self.next_fh
+            self.next_fh += 1
         
         # If writable, spool the entire file from BloxDrive to local!
         if (flags & 3) != os.O_RDONLY:
@@ -206,15 +210,17 @@ class BloxDriveFUSE(Operations):
 
     def _fetch_chunk_data(self, chunk):
         """Fetches and caches a chunk. First tries CDN URL, then falls back."""
-        if self.cache_chunk_id == chunk['id'] and (time.time() - self.cache_time < 300):
-            return self.cache_data
+        with self.cache_lock:
+            if self.cache_chunk_id == chunk['id'] and (time.time() - self.cache_time < 300):
+                return self.cache_data
 
         try:
             raw_bytes = self.loop.run_until_complete(self.pool.fetch_chunk_data(chunk, self.db))
             if raw_bytes is not None:
-                self.cache_chunk_id = chunk['id']
-                self.cache_data = raw_bytes
-                self.cache_time = time.time()
+                with self.cache_lock:
+                    self.cache_chunk_id = chunk['id']
+                    self.cache_data = raw_bytes
+                    self.cache_time = time.time()
                 return raw_bytes
         except Exception as e:
             print(f"Fetch error: {e}")
@@ -269,8 +275,9 @@ class BloxDriveFUSE(Operations):
             
         self.db.update_mode(filename, stat.S_IFREG | mode)
         
-        fh = self.next_fh
-        self.next_fh += 1
+        with self.fh_lock:
+            fh = self.next_fh
+            self.next_fh += 1
         
         spool_path = os.path.join(self.spool_dir, str(uuid.uuid4()))
         open(spool_path, 'wb').close()
@@ -286,9 +293,9 @@ class BloxDriveFUSE(Operations):
             if not file_record:
                 return 0 # deleted
                 
-            from main import upload_file
+            from uploader import upload_file
             try:
-                self.loop.run_until_complete(upload_file(info['path'], filename_override=filename, file_id_override=file_record['id']))
+                self.loop.run_until_complete(upload_file(info['path'], filename_override=filename))
                 info['dirty'] = False
             except Exception as e:
                 print(f"Flush upload failed: {e}")

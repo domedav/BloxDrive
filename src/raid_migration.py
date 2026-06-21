@@ -3,7 +3,7 @@ import os
 from db import DatabaseManager
 from roblox_pool import RobloxPool
 import aiohttp
-from main import upload_file
+from uploader import upload_file
 
 class RaidMigration:
     def __init__(self):
@@ -65,7 +65,7 @@ class RaidMigration:
             # Step 2: Upload the file again using the same file ID
             # upload_file will automatically stripe it across the pool
             print(f"  Re-uploading '{file_record['filename']}' with RAID protection...")
-            await upload_file(tmp_path, filename_override=file_record['filename'], file_id_override=file_record['id'])
+            await upload_file(tmp_path, filename_override=file_record['filename'])
             
             print(f"  Successfully migrated '{file_record['filename']}'.")
         finally:

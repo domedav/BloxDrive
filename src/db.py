@@ -38,7 +38,10 @@ class DatabaseManager:
                 password=self.password
             )
             cursor = conn.cursor()
-            cursor.execute(f"CREATE DATABASE IF NOT EXISTS {self.database}")
+            import re
+            if not re.match(r'^[a-zA-Z0-9_]+$', self.database):
+                raise ValueError("Invalid database name")
+            cursor.execute(f"CREATE DATABASE IF NOT EXISTS `{self.database}`")
             cursor.close()
             conn.close()
 
@@ -203,6 +206,11 @@ class DatabaseManager:
             cursor.execute("DELETE FROM files WHERE filename = %s", (filename,))
             conn.commit()
 
+    def delete_file_by_id(self, file_id):
+        with closing(self.get_connection()) as conn, closing(conn.cursor()) as cursor:
+            cursor.execute("DELETE FROM files WHERE id = %s", (file_id,))
+            conn.commit()
+
     def delete_chunks(self, file_id):
         with closing(self.get_connection()) as conn, closing(conn.cursor()) as cursor:
             cursor.execute("DELETE FROM chunks WHERE file_id = %s", (file_id,))
@@ -336,6 +344,15 @@ class DatabaseManager:
             
             stripe['members'] = members
             return stripe
+
+    def get_stripes_for_file(self, file_id):
+        with closing(self.get_connection()) as conn, closing(conn.cursor(dictionary=True)) as cursor:
+            cursor.execute("SELECT * FROM raid_stripes WHERE file_id = %s ORDER BY stripe_index", (file_id,))
+            stripes = cursor.fetchall()
+            for stripe in stripes:
+                cursor.execute("SELECT * FROM raid_stripe_members WHERE stripe_id = %s", (stripe['id'],))
+                stripe['members'] = cursor.fetchall()
+            return stripes
 
     def get_chunks_on_account(self, account_id):
         with closing(self.get_connection()) as conn, closing(conn.cursor(dictionary=True)) as cursor:

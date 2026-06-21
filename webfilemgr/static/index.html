@@ -577,6 +577,31 @@
     </div>
 
     <script>
+        // Intercept all API calls to inject the Authorization token
+        const originalFetch = window.fetch;
+        window.fetch = function() {
+            let [resource, config] = arguments;
+            if(typeof resource === 'string' && resource.startsWith('/api/')) {
+                if (!config) config = {};
+                if (!config.headers) config.headers = {};
+                config.headers['Authorization'] = 'Bearer ' + window.API_TOKEN;
+            }
+            return originalFetch(resource, config);
+        };
+        
+        // Escape HTML to prevent XSS
+        function escapeHTML(str) {
+            return String(str).replace(/[&<>'"]/g, 
+                tag => ({
+                    '&': '&amp;',
+                    '<': '&lt;',
+                    '>': '&gt;',
+                    "'": '&#39;',
+                    '"': '&quot;'
+                }[tag] || tag)
+            );
+        }
+
         let allFiles = [];
         let currentPath = '';
         let selectedItems = new Set();
@@ -665,19 +690,22 @@
                 const targetPath = currentPath === '' ? folderName : currentPath + '/' + folderName;
                 const isSelected = selectedItems.has('folder:' + folderName);
                 
+                const escFolder = escapeHTML(folderName);
+                const escTarget = escapeHTML(targetPath);
+                
                 html += `
                     <div class="file-item">
                         <div class="checkbox-wrapper">
-                            <input type="checkbox" ${isSelected ? 'checked' : ''} onchange="toggleSelect('folder:${folderName}')">
+                            <input type="checkbox" ${isSelected ? 'checked' : ''} onchange="toggleSelect('folder:${escFolder}')">
                         </div>
                         <div class="item-name">
                             <span class="item-icon">📁</span>
-                            <span class="item-name-text" onclick="navigateTo('${targetPath}')">${folderName}</span>
+                            <span class="item-name-text" onclick="navigateTo('${escTarget}')">${escFolder}</span>
                         </div>
                         <div class="item-size">-</div>
                         <div class="item-actions">
-                            <button class="action-icon" onclick="openRenameModal('${folderName}', true)" title="Rename">✏️</button>
-                            <button class="action-icon" onclick="downloadFolder('${folderName}')" title="Download Zip">⬇️</button>
+                            <button class="action-icon" onclick="openRenameModal('${escFolder}', true)" title="Rename">✏️</button>
+                            <button class="action-icon" onclick="downloadFolder('${escFolder}')" title="Download Zip">⬇️</button>
                         </div>
                     </div>
                 `;
@@ -686,19 +714,22 @@
             // Render files
             files.sort((a,b) => a.displayName.localeCompare(b.displayName)).forEach(f => {
                 const isSelected = selectedItems.has('file:' + f.filename);
+                const escDisplay = escapeHTML(f.displayName);
+                const escFile = escapeHTML(f.filename);
+                
                 html += `
                     <div class="file-item">
                         <div class="checkbox-wrapper">
-                            <input type="checkbox" ${isSelected ? 'checked' : ''} onchange="toggleSelect('file:${f.filename}')">
+                            <input type="checkbox" ${isSelected ? 'checked' : ''} onchange="toggleSelect('file:${escFile}')">
                         </div>
                         <div class="item-name">
                             <span class="item-icon">📄</span>
-                            <span class="item-name-text">${f.displayName}</span>
+                            <span class="item-name-text">${escDisplay}</span>
                         </div>
                         <div class="item-size">${formatBytes(f.size)}</div>
                         <div class="item-actions">
-                            <button class="action-icon" onclick="openRenameModal('${f.displayName}', false, '${f.filename}')" title="Rename">✏️</button>
-                            <a href="/api/download/${encodeURIComponent(f.filename)}" class="action-icon" title="Download" download>⬇️</a>
+                            <button class="action-icon" onclick="openRenameModal('${escDisplay}', false, '${escFile}')" title="Rename">✏️</button>
+                            <a href="/api/download/${encodeURIComponent(f.filename)}?token=${window.API_TOKEN}" class="action-icon" title="Download" download>⬇️</a>
                         </div>
                     </div>
                 `;
@@ -791,7 +822,7 @@
             try {
                 const form = document.createElement('form');
                 form.method = 'POST';
-                form.action = '/api/download_zip';
+                form.action = '/api/download_zip?token=' + window.API_TOKEN;
                 
                 const input = document.createElement('input');
                 input.type = 'hidden';

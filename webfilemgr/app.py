@@ -123,7 +123,7 @@ async def handle_upload(request):
         db.delete_chunks(existing['id'])
         db.delete_file(filename)
     
-    from main import upload_file
+    from uploader import upload_file
     
     try:
         await upload_file(filepath, filename_override=filename)
@@ -154,6 +154,8 @@ async def handle_create_folder(request):
     path = data.get('path')
     if not path:
         return web.json_response({"error": "Path required"}, status=400)
+    if ".." in path:
+        return web.json_response({"error": "Invalid path"}, status=400)
     
     # We create a dummy .keep file to instantiate the folder
     dummy_file = f"{path}/.keep"
@@ -260,7 +262,16 @@ async def handle_download_zip(request):
     return response
 
 async def handle_index(request):
-    return web.FileResponse(os.path.join(os.path.dirname(__file__), 'static', 'index.html'))
+    token = request.query.get('token')
+    if not token or token != config.API_TOKEN:
+        return web.Response(status=401, text=f"Unauthorized. Please access via http://{config.WEB_HOST}:{config.WEB_PORT}/?token=YOUR_API_TOKEN")
+        
+    html_path = os.path.join(os.path.dirname(__file__), 'static', 'index.html')
+    with open(html_path, 'r') as f:
+        html = f.read()
+        
+    html = html.replace("</head>", f"<script>window.API_TOKEN='{token}';</script></head>")
+    return web.Response(text=html, content_type='text/html')
 
 async def handle_raid_status(request):
     pool = RobloxPool()
@@ -283,7 +294,23 @@ async def handle_raid_add(request):
     
     return web.json_response({"success": True, "port": config.AUTH_PORT})
 
-app = web.Application()
+@web.middleware
+async def auth_middleware(request, handler):
+    if request.path == '/' or request.path.startswith('/static/'):
+        return await handler(request)
+        
+    token = request.headers.get('Authorization')
+    if token and token.startswith('Bearer '):
+        token = token[7:]
+    else:
+        token = request.query.get('token')
+        
+    if not token or token != config.API_TOKEN:
+        return web.json_response({"error": "Unauthorized"}, status=401)
+        
+    return await handler(request)
+
+app = web.Application(middlewares=[auth_middleware])
 app.client_max_size = 1024 * 1024 * 1024 * 10 # 10GB limit
 
 # API Routes
@@ -304,5 +331,5 @@ app.router.add_post('/api/raid/add', handle_raid_add)
 if __name__ == '__main__':
     port = config.WEB_PORT
     host = config.WEB_HOST
-    print(f"Starting Web UI on http://{host}:{port}")
+    print(f"Starting Web UI on http://{host}:{port}/?token={config.API_TOKEN}")
     web.run_app(app, host=host, port=port)

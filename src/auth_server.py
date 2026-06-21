@@ -17,11 +17,12 @@ class AuthHandler(http.server.SimpleHTTPRequestHandler):
             self.send_header("Content-type", "text/html")
             self.end_headers()
             
+            import html as html_lib
+            
             # Read current settings to pre-fill if available
             settings_file = config.SETTINGS_FILE
             current_api_key = config.ROBLOX_API_KEY if config.ROBLOX_API_KEY != "YOUR_API_KEY_HERE" else ""
             current_user_id = config.ROBLOX_USER_ID if config.ROBLOX_USER_ID != "YOUR_ROBLOX_USER_ID_HERE" else ""
-            
             
             # If adding an account, we want empty fields and a label
             if AuthHandler.setup_mode in ["add_account", "replace_account"]:
@@ -45,6 +46,11 @@ class AuthHandler(http.server.SimpleHTTPRequestHandler):
                 title = "BloxDrive Setup Wizard"
                 desc = "Please configure your Roblox Open Cloud credentials to continue."
                 label_field = '<input type="hidden" name="label" value="Primary"/>'
+
+            title = html_lib.escape(title)
+            desc = html_lib.escape(desc)
+            current_api_key = html_lib.escape(current_api_key)
+            current_user_id = html_lib.escape(current_user_id)
 
             html = f"""
             <html>
@@ -119,8 +125,15 @@ class AuthHandler(http.server.SimpleHTTPRequestHandler):
 
     def do_POST(self):
         if self.path == '/submit':
-            content_length = int(self.headers['Content-Length'])
-            post_data = self.rfile.read(content_length).decode('utf-8')
+            raw_cl = self.headers.get('Content-Length')
+            if not raw_cl:
+                self.send_error(411, "Content-Length required")
+                return
+            content_length = int(raw_cl)
+            if content_length > 64 * 1024:
+                self.send_error(413, "Request too large")
+                return
+            post_data = self.rfile.read(content_length).decode('utf-8', errors='replace')
             parsed = urllib.parse.parse_qs(post_data)
             
             api_key = parsed.get('api_key', [''])[0].strip()
@@ -135,10 +148,13 @@ class AuthHandler(http.server.SimpleHTTPRequestHandler):
 
                 # Save to database
                 try:
+                    from crypto import CryptoManager
+                    import base64
+                    encrypted_token = base64.b64encode(CryptoManager.encrypt(token.encode('utf-8'))).decode('utf-8')
                     from db import DatabaseManager
                     db = DatabaseManager()
                     # Check if DB has accounts table (it might not be initialized if first run, but DatabaseManager creates tables)
-                    db.add_account(label, api_key, user_id, token)
+                    db.add_account(label, api_key, user_id, encrypted_token)
                 except Exception as e:
                     self.send_error(500, f"Database error: {e}")
                     return
@@ -159,8 +175,8 @@ class AuthHandler(http.server.SimpleHTTPRequestHandler):
                     config.ROBLOX_API_KEY = api_key
                     config.ROBLOX_USER_ID = user_id
 
-                    with open('auth.json', 'w') as f:
-                        json.dump({'token': token}, f)
+                    with open(os.path.join(os.path.dirname(__file__), '..', 'auth.json'), 'w') as f:
+                        json.dump({'token': encrypted_token}, f)
                         
                 elif AuthHandler.setup_mode == "replace_account" and AuthHandler.old_account_id is not None:
                     try:
@@ -173,7 +189,8 @@ class AuthHandler(http.server.SimpleHTTPRequestHandler):
                         import subprocess
                         import sys
                         print("Automatically launching RAID recovery onto the new account...")
-                        subprocess.Popen([sys.executable, "src/main.py", "raid", "recover"])
+                        main_py = os.path.join(os.path.dirname(__file__), 'main.py')
+                        subprocess.Popen([sys.executable, main_py, "raid", "recover"])
                     except Exception as e:
                         print(f"Failed to auto-recover: {e}")
                 
@@ -198,10 +215,17 @@ def is_auth_valid(token):
         return False
     try:
         import urllib.request
+        import urllib.error
         req = urllib.request.Request("https://users.roblox.com/v1/users/authenticated")
         req.add_header("Cookie", f".ROBLOSECURITY={token}")
         response = urllib.request.urlopen(req, timeout=5)
         return response.getcode() == 200
+    except urllib.error.HTTPError as e:
+        if e.code in (401, 403):
+            return False
+        return True
+    except (urllib.error.URLError, TimeoutError):
+        return True
     except Exception:
         return False
 
@@ -210,8 +234,11 @@ def force_reauth():
     if os.path.exists('auth.json'):
         os.remove('auth.json')
     from db import DatabaseManager
+    from contextlib import closing
     db = DatabaseManager()
-    db.execute("DELETE FROM accounts") # Delete all accounts to force full setup
+    with closing(db.get_connection()) as conn, closing(conn.cursor()) as cur:
+        cur.execute("DELETE FROM accounts")
+        conn.commit()
     run_setup(mode="setup")
 
 def run_web_setup(mode="setup", old_account_id=None):
@@ -235,7 +262,7 @@ def run_web_setup(mode="setup", old_account_id=None):
         if e.errno == 98:
             print(f"\n[!] Error: Port {PORT} is already in use!")
             print("It seems another instance of the BloxDrive Setup Wizard is already running.")
-            print("Please open http://localhost:32666 in your browser to complete the setup,")
+            print(f"Please open http://localhost:{PORT} in your browser to complete the setup,")
             print("or kill the existing process using the port and try again.")
             exit(1)
         else:
@@ -299,9 +326,12 @@ def run_cli_setup(mode="setup", old_account_id=None):
 
     # Save to database
     try:
+        from crypto import CryptoManager
+        import base64
+        encrypted_token = base64.b64encode(CryptoManager.encrypt(token.encode('utf-8'))).decode('utf-8')
         from db import DatabaseManager
         db = DatabaseManager()
-        db.add_account(label, api_key, user_id, token)
+        db.add_account(label, api_key, user_id, encrypted_token)
     except Exception as e:
         print(f"\n[!] Database error: {e}")
         return
@@ -324,8 +354,8 @@ def run_cli_setup(mode="setup", old_account_id=None):
         config.ROBLOX_API_KEY = api_key
         config.ROBLOX_USER_ID = user_id
 
-        with open('auth.json', 'w') as f:
-            json.dump({'token': token}, f)
+        with open(os.path.join(os.path.dirname(__file__), '..', 'auth.json'), 'w') as f:
+            json.dump({'token': encrypted_token}, f)
             
     elif mode == "replace_account" and old_account_id is not None:
         try:
@@ -335,7 +365,8 @@ def run_cli_setup(mode="setup", old_account_id=None):
             import subprocess
             import sys
             print("Automatically launching RAID recovery onto the new account...")
-            subprocess.Popen([sys.executable, "src/main.py", "raid", "recover"])
+            main_py = os.path.join(os.path.dirname(__file__), 'main.py')
+            subprocess.Popen([sys.executable, main_py, "raid", "recover"])
         except Exception as e:
             print(f"Failed to auto-recover: {e}")
     
@@ -373,11 +404,17 @@ def ensure_setup():
         import config
         has_config = config.ROBLOX_API_KEY and config.ROBLOX_API_KEY != "YOUR_API_KEY_HERE"
         has_token = False
-        if os.path.exists('auth.json'):
+        if os.path.exists(os.path.join(os.path.dirname(__file__), '..', 'auth.json')):
             try:
-                with open('auth.json', 'r') as f:
+                with open(os.path.join(os.path.dirname(__file__), '..', 'auth.json'), 'r') as f:
                     data = json.load(f)
-                    has_token = is_auth_valid(data.get('token'))
+                    try:
+                        from crypto import CryptoManager
+                        import base64
+                        decrypted_token = CryptoManager.decrypt(base64.b64decode(data.get('token', ''))).decode('utf-8')
+                    except Exception:
+                        decrypted_token = ""
+                    has_token = is_auth_valid(decrypted_token)
             except Exception:
                 pass
                 
@@ -385,8 +422,24 @@ def ensure_setup():
             needs_setup = False
     else:
         # We have accounts in the DB. Let's verify ALL of them.
-        for acc in accounts:
-            if not is_auth_valid(acc['auth_token']):
+        import concurrent.futures
+        from crypto import CryptoManager
+        import base64
+        
+        def verify_account(acc):
+            try:
+                decrypted_token = CryptoManager.decrypt(base64.b64decode(acc['auth_token'])).decode('utf-8')
+            except Exception:
+                return acc
+            if not is_auth_valid(decrypted_token):
+                return acc
+            return None
+
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            results = list(executor.map(verify_account, accounts))
+        
+        for acc in results:
+            if acc:
                 failed_account = acc
                 break
             

@@ -29,7 +29,7 @@ def test_decrypt_invalid_mac():
     tampered_ciphertext = bytearray(ciphertext)
     tampered_ciphertext[-1] ^= 0xFF
     
-    with pytest.raises(InvalidTag):
+    with pytest.raises(ValueError):
         CryptoManager.decrypt(bytes(tampered_ciphertext))
 
 def test_decrypt_tampered_iv():
@@ -40,7 +40,7 @@ def test_decrypt_tampered_iv():
     tampered_ciphertext = bytearray(ciphertext)
     tampered_ciphertext[0] ^= 0xFF
     
-    with pytest.raises(InvalidTag):
+    with pytest.raises(ValueError):
         CryptoManager.decrypt(bytes(tampered_ciphertext))
 
 @pytest.mark.parametrize("size", [1, 15, 16, 31, 32, 1024, 1024 * 1024])

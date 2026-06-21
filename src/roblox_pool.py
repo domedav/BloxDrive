@@ -18,12 +18,19 @@ class RobloxPool:
         """Loads healthy accounts from DB, creates RobloxClient per account."""
         db = DatabaseManager()
         accounts = db.get_healthy_accounts()
+        from crypto import CryptoManager
+        import base64
         for acc in accounts:
             account_id = acc['id']
+            try:
+                decrypted_token = CryptoManager.decrypt(base64.b64decode(acc['auth_token'])).decode('utf-8')
+            except Exception:
+                decrypted_token = ""
+                
             client = RobloxClient(
                 api_key=acc['api_key'],
                 user_id=acc['user_id'],
-                auth_token=acc['auth_token'],
+                auth_token=decrypted_token,
                 account_id=account_id
             )
             self.clients[account_id] = client
@@ -40,6 +47,10 @@ class RobloxPool:
                     with open('auth.json', 'r') as f:
                         data = json.load(f)
                         token = data.get('token')
+                        if token:
+                            from crypto import CryptoManager
+                            import base64
+                            token = CryptoManager.decrypt(base64.b64decode(token)).decode('utf-8')
                 except Exception:
                     pass
             
@@ -170,10 +181,10 @@ class RobloxPool:
                     
                 # We need the chunk record to get the asset_id
                 # (stripe_members doesn't store asset_id, we must fetch from chunks)
-                db_cursor = db.get_connection().cursor(dictionary=True)
-                db_cursor.execute("SELECT * FROM chunks WHERE id = %s", (member['chunk_id'],))
-                member_chunk = db_cursor.fetchone()
-                db_cursor.close()
+                from contextlib import closing
+                with closing(db.get_connection()) as conn, closing(conn.cursor(dictionary=True)) as db_cursor:
+                    db_cursor.execute("SELECT * FROM chunks WHERE id = %s", (member['chunk_id'],))
+                    member_chunk = db_cursor.fetchone()
                 
                 cdn_url = member_chunk['cdn_url'] or await member_client.resolve_cdn_url(member_chunk['asset_id'])
                 if not cdn_url:

@@ -18,7 +18,7 @@ def test_main_mount(monkeypatch):
 
 def test_main_upload(monkeypatch):
     mock_upload = AsyncMock()
-    monkeypatch.setattr('main.upload_file', mock_upload)
+    monkeypatch.setattr('uploader.upload_file', mock_upload)
     
     with patch('sys.argv', ['main.py', 'upload', 'test.txt']):
         main.main()

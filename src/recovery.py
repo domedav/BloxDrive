@@ -2,7 +2,7 @@ import asyncio
 from db import DatabaseManager
 from roblox_pool import RobloxPool
 import aiohttp
-from main import upload_file
+from uploader import upload_file
 import os
 
 class RaidRecovery:

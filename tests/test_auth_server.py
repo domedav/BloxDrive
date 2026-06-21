@@ -39,11 +39,12 @@ def test_ensure_setup_healthy(monkeypatch):
         def __init__(self):
             pass
         def get_healthy_accounts(self):
-            return [{'id': 1, 'label': 'acc1', 'auth_token': 'good_token'}]
+            return [{'id': 1, 'label': 'acc1', 'auth_token': 'Z29vZF90b2tlbg=='}]
             
     monkeypatch.setattr('db.DatabaseManager', MockDB)
     monkeypatch.setattr('auth_server.is_auth_valid', lambda x: True)
-    
+    monkeypatch.setattr('crypto.CryptoManager.decrypt', lambda x: x)
+
     # Should return True without calling run_web_setup
     assert ensure_setup() is True
 
