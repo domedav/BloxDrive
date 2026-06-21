@@ -79,3 +79,6 @@ BloxDrive uses an advanced RAID-5 style XOR parity system to protect your data. 
 2. Or use the CLI command: `./bloxdrive.sh raid add`
 
 The Setup Wizard seamlessly supports authenticating multiple accounts. Once multiple accounts are linked, your files will be striped across all of them automatically!
+
+> [!IMPORTANT]
+> **Session Expiry & Switch Account:** When managing multiple accounts, **never log out** of the Roblox accounts in your browser or Roblox UI. Logging out immediately invalidates the `.ROBLOSECURITY` session token on Roblox's servers. Instead, use the **"Switch Account"** feature to navigate between accounts and keep all tokens active for BloxDrive.

@@ -22,6 +22,9 @@ BloxDrive uses an advanced RAID-5 style XOR parity system to protect your data. 
 2. **Protect Existing Files**: Run `./bloxdrive.sh raid protect` to migrate all your old files into the new RAID pool.
 3. **Recover**: If an account dies, simply use `./bloxdrive.sh raid recover` to rebuild the missing pieces onto a new healthy account.
 
+> [!IMPORTANT]
+> **Active Sessions (Tokens):** To keep your Roblox accounts' auth tokens active, you must use the **"Switch Account"** feature in the Roblox UI/browser instead of logging out. Logging out of an account will invalidate its `.ROBLOSECURITY` token, causing FUSE and recovery tools to lose access.
+
 ## 🚀 Quick Start
 Read the `SETUP.md` file for full installation instructions.
 
