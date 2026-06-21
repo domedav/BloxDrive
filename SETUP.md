@@ -26,7 +26,7 @@ BloxDrive uses a relational database to track files and chunks to ensure high-sp
 
 ## 4. Configuration
 Review and edit the `settings.json` file in the root directory:
-- **`CHUNK_SIZE_MB`**: Defaults to 19. Do not exceed 20MB, as this violates the Roblox asset limit.
+- **`CHUNK_SIZE_KB`**: Defaults to 750. Capped at 750 to prevent Roblox from auto-resizing the steganographic images, which would corrupt the data.
 - **`RATE_LIMIT_UPLOADS_PER_MIN`**: Defaults to 55 to safely stay under the 60 uploads/minute quota.
 - **`MOUNT_DIR`**: Where the FUSE drive will mount on your system.
 - **`SPOOL_DIR`**: A temporary local cache folder used to hold files being written before they are uploaded.
