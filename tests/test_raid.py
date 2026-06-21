@@ -120,7 +120,7 @@ async def test_print_health(mock_pool_cls, mock_db_cls, mock_db, mock_pool, caps
     captured = capsys.readouterr()
     assert "Total Configured Accounts: 3" in captured.out
     assert "Files Scanned: 4" in captured.out
-    assert "Healthy: 1" in captured.out # healthy.txt
+    assert "Healthy: 2" in captured.out # healthy.txt + needs_migration.txt (legacy)
     assert "Degraded (1 Drive Failed): 1" in captured.out # degraded.txt
     assert "Lost (2+ Drives Failed): 1" in captured.out # lost.txt
 

@@ -35,13 +35,15 @@ class RaidRecovery:
         
         for f in files:
             if f['size'] == 0:
+                healthy_files += 1
                 continue
                 
             chunks = self.db.get_chunks(f['id'])
             stripes = self.db.get_stripes_for_file(f['id'])
             
             if not stripes:
-                # Legacy file without RAID
+                # Legacy file without RAID is healthy
+                healthy_files += 1
                 continue
                 
             file_degraded = False
