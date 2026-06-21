@@ -56,10 +56,10 @@ def test_ensure_setup_needs_setup(monkeypatch):
     monkeypatch.setattr('db.DatabaseManager', MockDB)
     
     setup_called = []
-    def mock_run_web_setup(mode="setup", old_account_id=None):
+    def mock_run_setup(mode="setup", old_account_id=None):
         setup_called.append(mode)
         
-    monkeypatch.setattr('auth_server.run_web_setup', mock_run_web_setup)
+    monkeypatch.setattr('auth_server.run_setup', mock_run_setup)
     
     # With no auth.json it should require setup
     if os.path.exists('auth.json'):
@@ -78,10 +78,10 @@ def test_ensure_setup_replace_account(monkeypatch):
     monkeypatch.setattr('auth_server.is_auth_valid', lambda x: False)
     
     setup_called = []
-    def mock_run_web_setup(mode="setup", old_account_id=None):
+    def mock_run_setup(mode="setup", old_account_id=None):
         setup_called.append((mode, old_account_id))
         
-    monkeypatch.setattr('auth_server.run_web_setup', mock_run_web_setup)
+    monkeypatch.setattr('auth_server.run_setup', mock_run_setup)
     
     ensure_setup()
     assert ("replace_account", 1) in setup_called

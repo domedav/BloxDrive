@@ -212,7 +212,7 @@ def main():
             asyncio.run(RaidRecovery().print_health())
         elif args.raid_action == "add":
             import auth_server
-            auth_server.run_web_setup(mode="add_account")
+            auth_server.run_setup(mode="add_account")
         elif args.raid_action == "remove":
             if not args.label:
                 print("Error: You must provide an account --label to remove.")

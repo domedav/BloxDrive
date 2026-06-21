@@ -48,7 +48,10 @@ class AuthHandler(http.server.SimpleHTTPRequestHandler):
 
             html = f"""
             <html>
-            <head><title>{title}</title></head>
+            <head>
+                <meta charset="utf-8">
+                <title>{title}</title>
+            </head>
             <body style="font-family: sans-serif; margin: 40px; background-color: #f4f4f9; color: #333; max-width: 600px; margin: 40px auto; padding: 20px; background: white; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
                 <h2 style="color: #0078d7; border-bottom: 2px solid #eee; padding-bottom: 10px;">{title}</h2>
                 <p>{desc}</p>
@@ -94,6 +97,9 @@ class AuthHandler(http.server.SimpleHTTPRequestHandler):
             self.end_headers()
             html = """
             <html>
+            <head>
+                <meta charset="utf-8">
+            </head>
             <body style="font-family: sans-serif; text-align: center; margin-top: 100px; background-color: #f4f4f9;">
                 <h2 style="color: #28a745;">Configuration Saved Successfully!</h2>
                 <p>You can close this window and return to your terminal.</p>
@@ -206,7 +212,7 @@ def force_reauth():
     from db import DatabaseManager
     db = DatabaseManager()
     db.execute("DELETE FROM accounts") # Delete all accounts to force full setup
-    run_web_setup(mode="setup")
+    run_setup(mode="setup")
 
 def run_web_setup(mode="setup", old_account_id=None):
     AuthHandler.setup_mode = mode
@@ -236,8 +242,122 @@ def run_web_setup(mode="setup", old_account_id=None):
             print(f"\n[!] Failed to start Setup Wizard: {e}")
             exit(1)
 
+def run_cli_setup(mode="setup", old_account_id=None):
+    print("\n" + "="*50)
+    print("🖥️  CLI Setup Wizard 🖥️")
+    print("="*50)
+    if mode in ["add_account", "replace_account"]:
+        if mode == "replace_account":
+            print("Replace Roblox Account (RAID Recovery)")
+            print("One of your Roblox accounts was banned or its token expired. Please add a new account to recover your data.")
+        else:
+            print("Add Roblox Account (RAID)")
+            print("Please configure your new Roblox Open Cloud credentials to continue.")
+        label = input("0. Account Label (e.g. Account1): ").strip()
+        while not label:
+            label = input("Label is required. Account Label: ").strip()
+    else:
+        print("BloxDrive Setup Wizard")
+        print("Please configure your Roblox Open Cloud credentials to continue.")
+        label = "Primary"
+        
+    import config
+    current_api_key = config.ROBLOX_API_KEY if config.ROBLOX_API_KEY != "YOUR_API_KEY_HERE" else ""
+    current_user_id = config.ROBLOX_USER_ID if config.ROBLOX_USER_ID != "YOUR_ROBLOX_USER_ID_HERE" else ""
+    
+    if mode in ["add_account", "replace_account"]:
+        current_api_key = ""
+        current_user_id = ""
+
+    print("\n1. Roblox API Key")
+    print("Create an API key with Assets API -> Write permissions at Creator Dashboard.")
+    api_key_prompt = f"API Key [{current_api_key}]: " if current_api_key else "API Key: "
+    api_key = input(api_key_prompt).strip()
+    if not api_key:
+        api_key = current_api_key
+    while not api_key:
+        api_key = input("API Key is required: ").strip()
+
+    print("\n2. Roblox User ID")
+    print("Your numeric User ID from your Profile URL.")
+    user_id_prompt = f"User ID [{current_user_id}]: " if current_user_id else "User ID: "
+    user_id = input(user_id_prompt).strip()
+    if not user_id:
+        user_id = current_user_id
+    while not user_id:
+        user_id = input("User ID is required: ").strip()
+
+    print("\n3. .ROBLOSECURITY Cookie")
+    print("Required for bypassing asset upload quotas. Inspect Element -> Application/Storage -> Cookies.")
+    token = input("Cookie: ").strip()
+    while not token:
+        token = input("Cookie is required: ").strip()
+
+    if not is_auth_valid(token):
+        print("\n[!] Error: The .ROBLOSECURITY cookie provided is invalid or expired. Please check and try again.")
+        return run_cli_setup(mode, old_account_id)
+
+    # Save to database
+    try:
+        from db import DatabaseManager
+        db = DatabaseManager()
+        db.add_account(label, api_key, user_id, token)
+    except Exception as e:
+        print(f"\n[!] Database error: {e}")
+        return
+
+    # Backwards compatibility config
+    if mode == "setup":
+        settings = {}
+        if os.path.exists(config.SETTINGS_FILE):
+            import json
+            with open(config.SETTINGS_FILE, 'r') as f:
+                settings = json.load(f)
+        
+        settings['ROBLOX_API_KEY'] = api_key
+        settings['ROBLOX_USER_ID'] = user_id
+        
+        import json
+        with open(config.SETTINGS_FILE, 'w') as f:
+            json.dump(settings, f, indent=4)
+            
+        config.ROBLOX_API_KEY = api_key
+        config.ROBLOX_USER_ID = user_id
+
+        with open('auth.json', 'w') as f:
+            json.dump({'token': token}, f)
+            
+    elif mode == "replace_account" and old_account_id is not None:
+        try:
+            db.remove_account(old_account_id)
+            print(f"Removed dead account ID {old_account_id}.")
+            
+            import subprocess
+            import sys
+            print("Automatically launching RAID recovery onto the new account...")
+            subprocess.Popen([sys.executable, "src/main.py", "raid", "recover"])
+        except Exception as e:
+            print(f"Failed to auto-recover: {e}")
+    
+    print(f"\n✅ Configuration and Auth Token successfully saved for account '{label}'!")
+    return
+
+def run_setup(mode="setup", old_account_id=None):
+    print("\nHow would you like to complete the setup?")
+    print("1) Web Browser (Recommended)")
+    print("2) Command Line Interface (CLI)")
+    try:
+        choice = input("Enter choice (1/2) [1]: ").strip()
+    except EOFError:
+        choice = "1"
+    
+    if choice == "2":
+        run_cli_setup(mode, old_account_id)
+    else:
+        run_web_setup(mode, old_account_id)
+
 def ensure_setup():
-    """Checks if API Key, User ID, and Cookie are present and valid. If not, forces Web Setup."""
+    """Checks if API Key, User ID, and Cookie are present and valid. If not, forces Web/CLI Setup."""
     from db import DatabaseManager
     try:
         db = DatabaseManager()
@@ -275,7 +395,7 @@ def ensure_setup():
         print("🔧 BloxDrive Setup Required 🔧")
         print("="*50)
         print("Your configuration is missing or your authentication token has expired.")
-        run_web_setup(mode="setup")
+        run_setup(mode="setup")
     elif failed_account:
         print("\n" + "="*50)
         print(f"🚨 CRITICAL: Account Failure Detected! 🚨")
@@ -283,7 +403,7 @@ def ensure_setup():
         print(f"Account '{failed_account['label']}' (ID: {failed_account['id']}) is no longer accessible!")
         print("The authentication token has expired or the account was banned.")
         print("To prevent data loss, please provide a replacement account now.")
-        run_web_setup(mode="replace_account", old_account_id=failed_account['id'])
+        run_setup(mode="replace_account", old_account_id=failed_account['id'])
     else:
         print("Authentication verified and active for all accounts.")
         
