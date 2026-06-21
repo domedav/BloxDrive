@@ -31,12 +31,16 @@ class RaidMigration:
                 continue
                 
             # Check if it needs migration
-            # A file needs migration if any of its chunks lack RAID protection
+            # A file needs migration if it has no RAID stripes, or if any of its chunks lack RAID protection
+            stripes = self.db.get_stripes_for_file(f['id'])
             needs_migration = False
-            for c in chunks:
-                if c.get('account_id') is None or c.get('account_id') == -1 or c.get('chunk_type') is None:
-                    needs_migration = True
-                    break
+            if not stripes:
+                needs_migration = True
+            else:
+                for c in chunks:
+                    if c.get('account_id') is None or c.get('account_id') == -1 or c.get('chunk_type') is None:
+                        needs_migration = True
+                        break
                     
             if needs_migration:
                 print(f"Migrating '{f['filename']}' ({f['size']} bytes) to RAID-{self.pool.n}...")
