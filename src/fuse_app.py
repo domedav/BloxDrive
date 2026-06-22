@@ -34,6 +34,7 @@ class BloxDriveFUSE(Operations):
         self.next_fh = 1
         self.fh_lock = threading.Lock()
         self.cache_lock = threading.Lock()
+        self.loop_lock = threading.Lock()  # Protect shared asyncio loop from concurrent threads
 
     # --- Filesystem Methods ---
 
@@ -215,7 +216,8 @@ class BloxDriveFUSE(Operations):
                 return self.cache_data
 
         try:
-            raw_bytes = self.loop.run_until_complete(self.pool.fetch_chunk_data(chunk, self.db))
+            with self.loop_lock:
+                raw_bytes = self.loop.run_until_complete(self.pool.fetch_chunk_data(chunk, self.db))
             if raw_bytes is not None:
                 with self.cache_lock:
                     self.cache_chunk_id = chunk['id']
@@ -286,31 +288,49 @@ class BloxDriveFUSE(Operations):
         return fh
 
     def flush(self, path, fh):
-        info = self.open_files.get(fh)
-        if info and info['dirty'] and info['path']:
-            filename = info['filename']
-            file_record = self.db.get_file(filename)
-            if not file_record:
-                return 0 # deleted
-                
-            from uploader import upload_file
-            try:
-                self.loop.run_until_complete(upload_file(info['path'], filename_override=filename))
-                info['dirty'] = False
-            except Exception as e:
-                print(f"Flush upload failed: {e}")
-                raise FuseOSError(errno.EIO)
+        # Do NOT upload here — flush() is called by the kernel on every close/fsync
+        # and would block the entire FUSE thread (freezing all filesystem operations).
+        # The actual upload is handled in release(), which runs in a background thread.
         return 0
 
     def release(self, path, fh):
         info = self.open_files.pop(fh, None)
-        if info and info['path']:
+        if not info:
+            return 0
+
+        spool_path = info.get('path')
+        dirty = info.get('dirty', False)
+        filename = info.get('filename')
+
+        if spool_path and dirty:
+            # Upload in a background daemon thread so release() returns immediately.
+            # This keeps FUSE responsive — getattr/readdir from other apps won't freeze
+            # while a potentially multi-minute Roblox upload is in progress.
+            def _background_upload(sp, fn):
+                loop = asyncio.new_event_loop()
+                try:
+                    from uploader import upload_file
+                    loop.run_until_complete(upload_file(sp, filename_override=fn))
+                except Exception as e:
+                    print(f"Background upload failed for '{fn}': {e}")
+                finally:
+                    loop.close()
+                    try:
+                        if os.path.exists(sp):
+                            os.remove(sp)
+                    except Exception:
+                        pass
+
+            t = threading.Thread(target=_background_upload, args=(spool_path, filename), daemon=True)
+            t.start()
+        elif spool_path:
+            # File was opened but not modified — just clean up the spool file.
             try:
-                if os.path.exists(info['path']):
-                    os.remove(info['path'])
+                if os.path.exists(spool_path):
+                    os.remove(spool_path)
             except Exception:
                 pass
-            
+
         return 0
 
     def unlink(self, path):
@@ -396,4 +416,6 @@ class BloxDriveFUSE(Operations):
 def mount_drive(mountpoint):
     db = DatabaseManager()
     print(f"Mounting BloxDrive at {mountpoint}...")
-    FUSE(BloxDriveFUSE(db), mountpoint, nothreads=True, foreground=True)
+    # nothreads=False: allow FUSE to dispatch concurrent kernel requests on separate threads.
+    # Without this, any blocking call (e.g. a Roblox upload) stalls ALL filesystem ops.
+    FUSE(BloxDriveFUSE(db), mountpoint, nothreads=False, foreground=True)
