@@ -8,6 +8,8 @@ from roblox_pool import RobloxPool
 from encoder import ImageCoder
 import config
 from crypto import CryptoManager
+import random
+
 
 async def upload_file(filepath: str, filename_override: str = None, file_id_override: int = None):
     if not os.path.exists(filepath):
@@ -66,10 +68,15 @@ async def upload_file(filepath: str, filename_override: str = None, file_id_over
                     tmp_png = f"/tmp/bloxdrive_tmp_{file_id}_{seq}.png"
                     await loop.run_in_executor(None, ImageCoder.encode, encrypted_data, tmp_png)
                     
-                    print(f"  [{seq+1}/{total_chunks}] Uploading to Roblox (Account {data_account_id})...")
+                    # Generate a random, Roblox-safe name of 8 to 12 words using faker
+                    from faker import Faker
+                    fake = Faker()
+                    random_asset_name = " ".join(fake.words(nb=random.randint(8, 12)))
+                    
+                    print(f"  [{seq+1}/{total_chunks}] Uploading to Roblox (Account {data_account_id}) as '{random_asset_name}'...")
                     client = pool.get_client(data_account_id)
                     try:
-                        asset_id = await client.upload_asset(tmp_png, f"{filename}_part_{seq}")
+                        asset_id = await client.upload_asset(tmp_png, random_asset_name)
                         print(f"  [{seq+1}/{total_chunks}] Success! Asset ID: {asset_id}")
                         chunk_id = db.add_chunk(file_id, seq, str(asset_id), actual_size, None, chunk_hash, data_account_id, 'data')
                         data_chunk_ids.append(chunk_id)
@@ -89,9 +96,14 @@ async def upload_file(filepath: str, filename_override: str = None, file_id_over
                         
                         parity_account_id = assignment['parity']
                         client = pool.get_client(parity_account_id)
+                        
+                        # Generate random Roblox-safe name for parity
+                        random_parity_name = " ".join(fake.words(nb=random.randint(8, 12)))
+                        
                         try:
-                            asset_id = await client.upload_asset(tmp_png_parity, f"{filename}_parity_{stripe_index}")
+                            asset_id = await client.upload_asset(tmp_png_parity, random_parity_name)
                             print(f"  [Stripe {stripe_index}] Parity Success! Asset ID: {asset_id}")
+
                             
                             parity_seq = total_chunks + stripe_index
                             parity_chunk_id = db.add_chunk(file_id, parity_seq, str(asset_id), len(parity_data), None, None, parity_account_id, 'parity')
@@ -121,8 +133,14 @@ async def upload_file(filepath: str, filename_override: str = None, file_id_over
                 
                 parity_account_id = assignment['parity']
                 client = pool.get_client(parity_account_id)
+                
+                # Generate random Roblox-safe name for partial parity
+                from faker import Faker
+                fake = Faker()
+                random_parity_name = " ".join(fake.words(nb=random.randint(8, 12)))
+                
                 try:
-                    asset_id = await client.upload_asset(tmp_png_parity, f"{filename}_parity_{stripe_index}")
+                    asset_id = await client.upload_asset(tmp_png_parity, random_parity_name)
                     print(f"  [Stripe {stripe_index}] Parity Success! Asset ID: {asset_id}")
                     
                     parity_seq = total_chunks + stripe_index

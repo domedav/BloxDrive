@@ -5,3 +5,4 @@ Pillow
 fusepy
 cryptography
 numpy
+faker
