@@ -288,49 +288,30 @@ class BloxDriveFUSE(Operations):
         return fh
 
     def flush(self, path, fh):
-        # Do NOT upload here — flush() is called by the kernel on every close/fsync
-        # and would block the entire FUSE thread (freezing all filesystem operations).
-        # The actual upload is handled in release(), which runs in a background thread.
+        info = self.open_files.get(fh)
+        if info and info.get('dirty') and info.get('path'):
+            filename = info['filename']
+            try:
+                from uploader import upload_file
+                # Run synchronously to block the writing application until complete.
+                # Because nothreads=False, this blocks only the thread writing the file,
+                # keeping the rest of the FUSE filesystem fully responsive.
+                with self.loop_lock:
+                    self.loop.run_until_complete(upload_file(info['path'], filename_override=filename))
+                info['dirty'] = False
+            except Exception as e:
+                print(f"Flush upload failed for '{filename}': {e}")
+                raise FuseOSError(errno.EIO)
         return 0
 
     def release(self, path, fh):
         info = self.open_files.pop(fh, None)
-        if not info:
-            return 0
-
-        spool_path = info.get('path')
-        dirty = info.get('dirty', False)
-        filename = info.get('filename')
-
-        if spool_path and dirty:
-            # Upload in a background daemon thread so release() returns immediately.
-            # This keeps FUSE responsive — getattr/readdir from other apps won't freeze
-            # while a potentially multi-minute Roblox upload is in progress.
-            def _background_upload(sp, fn):
-                loop = asyncio.new_event_loop()
-                try:
-                    from uploader import upload_file
-                    loop.run_until_complete(upload_file(sp, filename_override=fn))
-                except Exception as e:
-                    print(f"Background upload failed for '{fn}': {e}")
-                finally:
-                    loop.close()
-                    try:
-                        if os.path.exists(sp):
-                            os.remove(sp)
-                    except Exception:
-                        pass
-
-            t = threading.Thread(target=_background_upload, args=(spool_path, filename), daemon=True)
-            t.start()
-        elif spool_path:
-            # File was opened but not modified — just clean up the spool file.
+        if info and info.get('path'):
             try:
-                if os.path.exists(spool_path):
-                    os.remove(spool_path)
+                if os.path.exists(info['path']):
+                    os.remove(info['path'])
             except Exception:
                 pass
-
         return 0
 
     def unlink(self, path):
