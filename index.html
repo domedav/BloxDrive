@@ -3,295 +3,622 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BloxDrive — Unlimited Free Encrypted Cloud Storage</title>
-    <meta name="description" content="Turn your Roblox inventory into a secure, infinite, high-speed virtual hard drive. Free, encrypted, open-source storage.">
-    <!-- Typography -->
+
+    <!-- Primary SEO -->
+    <title>BloxDrive — Free Unlimited Encrypted Cloud Storage Using Roblox</title>
+    <meta name="description" content="BloxDrive is a free, open-source tool that turns your Roblox inventory into an unlimited, AES-256 encrypted cloud drive on Linux. Supports RAID-5 redundancy, mobile web UI, and steganographic file hiding.">
+    <meta name="keywords" content="BloxDrive, free cloud storage, Roblox cloud storage, encrypted cloud drive, unlimited storage, AES-256, FUSE filesystem, Linux cloud storage, open source storage, RAID-5, steganography, Roblox decal storage">
+    <meta name="author" content="domedav">
+    <meta name="robots" content="index, follow">
+    <link rel="canonical" href="https://domedav.github.io/BloxDrive/">
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://domedav.github.io/BloxDrive/">
+    <meta property="og:title" content="BloxDrive — Free Unlimited Encrypted Cloud Storage Using Roblox">
+    <meta property="og:description" content="Turn your Roblox inventory into a secure, infinite virtual hard drive. AES-256 encrypted, RAID-5 protected, completely free and open-source.">
+    <meta property="og:site_name" content="BloxDrive">
+
+    <!-- Twitter / X -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="BloxDrive — Free Unlimited Encrypted Cloud Storage">
+    <meta name="twitter:description" content="Use your Roblox account as a secure, infinite cloud drive. AES-256 encrypted, RAID-5 protected, 100% free and open-source.">
+
+    <!-- Structured Data -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      "name": "BloxDrive",
+      "operatingSystem": "Linux",
+      "applicationCategory": "UtilitiesApplication",
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+      "description": "BloxDrive is a free, open-source encrypted cloud storage tool using Roblox as a backend. AES-256 encryption, RAID-5 redundancy, native Linux FUSE filesystem.",
+      "url": "https://domedav.github.io/BloxDrive/",
+      "downloadUrl": "https://github.com/domedav/BloxDrive/releases",
+      "softwareVersion": "1.0.2",
+      "author": { "@type": "Person", "name": "domedav" }
+    }
+    </script>
+
+    <meta name="theme-color" content="#0f1117">
+
+    <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Outfit:wght@600;800&display=swap" rel="stylesheet">
-    
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Outfit:wght@700;800&display=swap" rel="stylesheet">
+
     <style>
+        /* ── Tokens ── */
         :root {
-            --bg-color: #0d0f14;
-            --card-bg: #161a23;
-            --text-main: #f3f4f6;
-            --text-muted: #9ca3af;
-            --accent: #3b82f6;
-            --accent-glow: rgba(59, 130, 246, 0.15);
-            --success: #10b981;
-            --success-glow: rgba(16, 185, 129, 0.15);
-            --gradient-1: linear-gradient(135deg, #3b82f6, #8b5cf6);
-            --font-display: 'Outfit', sans-serif;
-            --font-body: 'Inter', sans-serif;
+            --bg:            #14172a;
+            --card:          #1c2138;
+            --card-border:   rgba(255, 255, 255, 0.1);
+            --text:          #edf0f8;
+            --text-body:     #b8c0d8;
+            --text-muted:    #7f8baa;
+            --accent:        #5b9cf6;
+            --accent-light:  #88b9ff;
+            --green:         #3de3a4;
+            --red:           #fb8080;
+            --purple:        #b89dfc;
+            --gradient:      linear-gradient(135deg, #5b9cf6 0%, #b89dfc 100%);
+            --radius:        14px;
+            --radius-sm:     8px;
+            --shadow:        0 4px 28px rgba(0, 0, 0, 0.3);
+
+            /* Spacing scale */
+            --space-xs:  0.5rem;
+            --space-sm:  0.875rem;
+            --space-md:  1.25rem;
+            --space-lg:  2rem;
+            --space-xl:  3rem;
+            --space-2xl: 4.5rem;
+
+            --font-display: 'Outfit', system-ui, sans-serif;
+            --font-body:    'Inter', system-ui, sans-serif;
+            --font-mono:    'Courier New', Courier, monospace;
         }
 
-        * {
+        /* ── Reset ── */
+        *, *::before, *::after {
             box-sizing: border-box;
             margin: 0;
             padding: 0;
         }
 
+        html { scroll-behavior: smooth; }
+
+        /* ── Base ── */
+        /* Global page background with ambient color */
+        html {
+            background-color: var(--bg);
+            background-image:
+                radial-gradient(ellipse 80% 55% at 15% 0%,   rgba(91, 156, 246, 0.18) 0%, transparent 65%),
+                radial-gradient(ellipse 65% 50% at 85% 100%, rgba(184, 157, 252, 0.14) 0%, transparent 65%);
+            min-height: 100vh;
+        }
+
         body {
             font-family: var(--font-body);
-            background-color: var(--bg-color);
-            color: var(--text-main);
-            line-height: 1.6;
-            padding: 2rem 1rem;
-            max-width: 900px;
+            background: transparent;
+            color: var(--text);
+            line-height: 1.75;
+            padding: clamp(1.25rem, 5vw, 2.5rem) clamp(1rem, 5vw, 2.5rem);
+            max-width: 940px;
             margin: 0 auto;
             overflow-x: hidden;
         }
 
-        header {
-            text-align: center;
-            margin-bottom: 3.5rem;
-            position: relative;
-        }
-
-        .logo {
-            font-family: var(--font-display);
-            font-size: 3rem;
-            font-weight: 800;
-            background: var(--gradient-1);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            margin-bottom: 0.5rem;
-            display: inline-block;
-        }
-
-        .tagline {
-            font-size: 1.25rem;
-            color: var(--text-muted);
-            max-width: 600px;
-            margin: 0 auto;
-        }
-
-        /* Straight to the Point Intro Card */
-        .intro-card {
-            background-color: var(--card-bg);
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            border-radius: 16px;
-            padding: 2.5rem;
-            margin-bottom: 2.5rem;
-            position: relative;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
-        }
-
-        .intro-card::before {
-            content: '';
+        /* ── Accessibility: Skip Link ── */
+        .skip-link {
             position: absolute;
-            top: -1px;
-            left: -1px;
-            right: -1px;
-            bottom: -1px;
-            border-radius: 16px;
-            background: var(--gradient-1);
-            z-index: -1;
-            opacity: 0.2;
+            top: -9999px;
+            left: 1rem;
+            padding: 0.5rem 1rem;
+            background: var(--accent);
+            color: #fff;
+            font-weight: 600;
+            border-radius: var(--radius-sm);
+            z-index: 100;
+            text-decoration: none;
+        }
+        .skip-link:focus { top: 1rem; }
+
+        /* ── Focus ring ── */
+        :focus-visible {
+            outline: 2px solid var(--accent);
+            outline-offset: 3px;
+            border-radius: 4px;
+        }
+
+        /* ── Typography ── */
+        h1 {
+            font-family: var(--font-display);
+            font-size: clamp(2.2rem, 7vw, 3.5rem);
+            font-weight: 800;
+            line-height: 1.1;
         }
 
         h2 {
             font-family: var(--font-display);
-            font-size: 1.8rem;
-            margin-bottom: 1.25rem;
-            color: #fff;
+            font-size: clamp(1.3rem, 3.5vw, 1.75rem);
+            font-weight: 700;
+            line-height: 1.2;
+            color: var(--text);
+            margin-bottom: var(--space-md);
+            text-align: center;
+        }
+
+        h3 {
+            font-family: var(--font-display);
+            font-size: 1.05rem;
+            font-weight: 700;
+            line-height: 1.3;
+            color: var(--text);
+            margin-bottom: var(--space-xs);
         }
 
         p {
-            margin-bottom: 1rem;
-            color: #d1d5db;
+            color: var(--text-body);
+            margin-bottom: var(--space-md);
+            max-width: 68ch;
         }
-
-        /* Requirements Grid */
-        .grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 1.5rem;
-            margin-bottom: 2.5rem;
-        }
-
-        @media (max-width: 600px) {
-            .grid {
-                grid-template-columns: 1fr;
-            }
-        }
-
-        .panel {
-            background-color: var(--card-bg);
-            border: 1px solid rgba(255, 255, 255, 0.05);
-            border-radius: 12px;
-            padding: 1.75rem;
-        }
-
-        .panel-title {
-            font-family: var(--font-display);
-            font-size: 1.3rem;
-            margin-bottom: 1rem;
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
-
-        .panel-list {
-            list-style: none;
-        }
-
-        .panel-list li {
-            margin-bottom: 0.75rem;
-            padding-left: 1.5rem;
-            position: relative;
-            color: #d1d5db;
-        }
-
-        .panel-list li::before {
-            content: "✓";
-            position: absolute;
-            left: 0;
-            color: var(--success);
-            font-weight: bold;
-        }
-
-        .panel.pc-req .panel-list li::before {
-            content: "🖥️";
-            font-size: 0.95rem;
-        }
-
-        /* Step Guide */
-        .step-list {
-            margin-top: 1.5rem;
-        }
-
-        .step-item {
-            display: flex;
-            gap: 1rem;
-            margin-bottom: 1.5rem;
-        }
-
-        .step-number {
-            background: var(--gradient-1);
-            color: #fff;
-            width: 32px;
-            height: 32px;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-family: var(--font-display);
-            font-weight: bold;
-            flex-shrink: 0;
-        }
-
-        .step-desc h3 {
-            font-family: var(--font-display);
-            font-size: 1.15rem;
-            margin-bottom: 0.25rem;
-            color: #fff;
-        }
-
-        .code-box {
-            background-color: #090b0e;
-            border-radius: 6px;
-            padding: 0.5rem 0.75rem;
-            font-family: monospace;
-            color: #60a5fa;
-            font-size: 0.9rem;
-            display: inline-block;
-            margin-top: 0.5rem;
-        }
-
-        footer {
-            text-align: center;
-            margin-top: 4rem;
-            padding-top: 2rem;
-            border-top: 1px solid rgba(255, 255, 255, 0.05);
-            color: var(--text-muted);
-            font-size: 0.9rem;
-        }
+        p:last-child { margin-bottom: 0; }
 
         a {
-            color: var(--accent);
-            text-decoration: none;
-            transition: color 0.2s;
+            color: var(--accent-light);
+            text-decoration: underline;
+            text-underline-offset: 3px;
+            transition: color 0.15s;
+        }
+        a:hover, a:focus { color: var(--text); }
+
+        strong { color: var(--text); font-weight: 600; }
+        em     { color: var(--text-body); font-style: italic; }
+
+        /* ── Utilities ── */
+        .text-muted  { color: var(--text-muted); }
+        .text-green  { color: var(--green); }
+        .text-blue   { color: var(--accent-light); }
+        .text-red    { color: var(--red); }
+        .text-sm     { font-size: 0.9rem; }
+        .text-xs     { font-size: 0.82rem; }
+        .mt-sm       { margin-top: var(--space-sm); }
+        .mt-md       { margin-top: var(--space-md); }
+        .mt-lg       { margin-top: var(--space-lg); }
+
+        /* ── Header ── */
+        header {
+            text-align: center;
+            padding: var(--space-2xl) 0 var(--space-xl);
         }
 
-        a:hover {
-            color: #60a5fa;
+        .logo-text {
+            display: inline-block;
+            background: var(--gradient);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .tagline {
+            font-size: clamp(1rem, 2.5vw, 1.15rem);
+            color: var(--text-muted);
+            max-width: 52ch;
+            margin: var(--space-md) auto var(--space-lg);
+            line-height: 1.6;
+        }
+
+        /* ── CTA Buttons ── */
+        .cta-group {
+            display: flex;
+            gap: var(--space-sm);
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            padding: 0.7rem 1.4rem;
+            min-height: 44px;          /* WCAG 2.5.5 touch target */
+            border-radius: var(--radius-sm);
+            font-family: var(--font-body);
+            font-size: 0.95rem;
+            font-weight: 600;
+            text-decoration: none;
+            border: none;
+            cursor: pointer;
+            transition: opacity 0.15s, transform 0.15s;
+        }
+        .btn:hover, .btn:focus { opacity: 0.85; transform: translateY(-2px); }
+
+        .btn-primary { background: var(--gradient); color: #fff; }
+        .btn-outline {
+            background: transparent;
+            border: 1.5px solid var(--card-border);
+            color: var(--text);
+        }
+
+        /* ── Badges ── */
+        .badge-row {
+            display: flex;
+            gap: var(--space-xs);
+            justify-content: center;
+            flex-wrap: wrap;
+            margin-top: var(--space-lg);
+        }
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            background: var(--card);
+            border: 1px solid var(--card-border);
+            border-radius: 100px;
+            padding: 0.3rem 0.85rem;
+            font-size: 0.8rem;
+            color: var(--text-muted);
+        }
+        .dot {
+            width: 6px; height: 6px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+        .dot-green  { background: var(--green); }
+        .dot-blue   { background: var(--accent); }
+        .dot-purple { background: var(--purple); }
+
+        /* ── Cards ── */
+        .card {
+            background: var(--card);
+            border: 1px solid var(--card-border);
+            border-radius: var(--radius);
+            padding: clamp(1.5rem, 4vw, 2.5rem);
+            box-shadow: var(--shadow);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+        }
+
+        /* ── Sections ── */
+        main { display: flex; flex-direction: column; gap: var(--space-lg); }
+
+        /* ── Two-column grid ── */
+        .two-col {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: var(--space-md);
+        }
+        @media (max-width: 560px) {
+            .two-col { grid-template-columns: 1fr; }
+        }
+
+        /* ── Feature List ── */
+        .feature-list {
+            list-style: none;
+            display: flex;
+            flex-direction: column;
+            gap: var(--space-sm);
+            margin-top: var(--space-sm);
+        }
+        .feature-list li {
+            display: flex;
+            align-items: flex-start;
+            gap: 0.65rem;
+            color: var(--text-body);
+            font-size: 0.95rem;
+            line-height: 1.55;
+        }
+        .feat-icon {
+            flex-shrink: 0;
+            font-size: 1.05rem;
+            margin-top: 0.1rem;
+        }
+
+        /* ── Steps ── */
+        .steps {
+            display: flex;
+            flex-direction: column;
+            gap: var(--space-lg);
+            margin-top: var(--space-md);
+        }
+        .step {
+            display: flex;
+            gap: var(--space-md);
+            align-items: flex-start;
+        }
+        .step-num {
+            flex-shrink: 0;
+            width: 38px; height: 38px;
+            border-radius: 50%;
+            background: var(--gradient);
+            display: flex; align-items: center; justify-content: center;
+            font-family: var(--font-display);
+            font-weight: 800;
+            font-size: 0.95rem;
+            color: #fff;
+        }
+        .step-body { flex: 1; }
+        .step-body h3 { margin-bottom: var(--space-xs); }
+        .step-body p  { margin-bottom: var(--space-sm); font-size: 0.95rem; }
+
+        /* ── Code ── */
+        .code {
+            display: inline-block;
+            background: #090b10;
+            border: 1px solid rgba(255,255,255,0.06);
+            border-radius: 6px;
+            padding: 0.35rem 0.7rem;
+            font-family: var(--font-mono);
+            font-size: 0.87rem;
+            color: #7dd3fc;
+            word-break: break-all;
+        }
+
+        /* ── RAID sub-grid ── */
+        .raid-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: var(--space-md);
+            margin: var(--space-lg) 0;
+        }
+        @media (max-width: 560px) {
+            .raid-grid { grid-template-columns: 1fr; }
+        }
+
+        .raid-block {
+            background: var(--bg);
+            border: 1px solid var(--card-border);
+            border-radius: var(--radius-sm);
+            padding: var(--space-md);
+        }
+        .raid-block h3 { margin-bottom: var(--space-xs); }
+        .raid-block p  { font-size: 0.9rem; margin-bottom: var(--space-sm); }
+
+        .raid-recover {
+            background: var(--bg);
+            border: 1px solid var(--card-border);
+            border-radius: var(--radius-sm);
+            padding: var(--space-md);
+        }
+        .raid-recover h3 { margin-bottom: var(--space-xs); }
+        .raid-recover p  { font-size: 0.9rem; margin-bottom: var(--space-sm); }
+
+        /* ── Footer ── */
+        footer {
+            border-top: 1px solid var(--card-border);
+            margin-top: var(--space-xl);
+            padding-top: var(--space-lg);
+            padding-bottom: var(--space-lg);
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 0.88rem;
+            line-height: 2.2;
+        }
+        footer p { max-width: none; color: var(--text-muted); text-align: center; }
+        footer a { color: var(--text-muted); }
+        footer a:hover { color: var(--text); }
+
+        /* ── Reduced Motion ── */
+        @media (prefers-reduced-motion: reduce) {
+            html { scroll-behavior: auto; }
+            .btn { transition: none; }
         }
     </style>
 </head>
+
 <body>
 
+    <a class="skip-link" href="#main-content">Skip to main content</a>
+
+    <!-- ════ HEADER ════ -->
     <header>
-        <div class="logo">☁️ BloxDrive</div>
-        <div class="tagline">Turn your unlimited Roblox inventory into a secure, infinite, high-speed virtual hard drive. Banish storage worries forever.</div>
+        <h1><span class="logo-text">☁️ BloxDrive</span></h1>
+        <p class="tagline">
+            Turn your Roblox account into a free, effectively limitless, AES-256 encrypted virtual hard drive — right on your Linux desktop.
+        </p>
+
+        <nav class="cta-group" aria-label="Primary actions">
+            <a class="btn btn-primary"
+               href="https://github.com/domedav/BloxDrive/releases"
+               target="_blank" rel="noopener noreferrer"
+               aria-label="Download the latest BloxDrive release from GitHub">
+                ⬇ Download Latest Release
+            </a>
+            <a class="btn btn-outline"
+               href="https://github.com/domedav/BloxDrive"
+               target="_blank" rel="noopener noreferrer"
+               aria-label="View BloxDrive source code on GitHub">
+                ⭐ View on GitHub
+            </a>
+        </nav>
+
+        <div class="badge-row" role="list" aria-label="Key highlights">
+            <span class="badge" role="listitem"><span class="dot dot-green" aria-hidden="true"></span>100% Free</span>
+            <span class="badge" role="listitem"><span class="dot dot-blue"  aria-hidden="true"></span>AES-256 Encrypted</span>
+            <span class="badge" role="listitem"><span class="dot dot-purple" aria-hidden="true"></span>Open Source</span>
+            <span class="badge" role="listitem"><span class="dot dot-green" aria-hidden="true"></span>RAID-5 Protected</span>
+            <span class="badge" role="listitem"><span class="dot dot-blue"  aria-hidden="true"></span>Linux FUSE</span>
+        </div>
     </header>
 
-    <div class="intro-card">
-        <h2>What is BloxDrive?</h2>
-        <p>Instead of paying monthly subscription fees for cloud storage, BloxDrive lets you store <strong>unlimited files</strong> completely for free. It splits your files, encrypts them securely on your computer, hides them inside Roblox decal images using steganography, and uploads them to Roblox servers.</p>
-        <p>To you, it looks just like an ordinary folder on your computer! You can drag, drop, open, and edit files, and they will load directly over the internet.</p>
-    </div>
+    <!-- ════ MAIN ════ -->
+    <main id="main-content">
 
-    <div class="grid">
-        <div class="panel pc-req">
-            <div class="panel-title" style="color: #60a5fa;">PC Requirements</div>
-            <ul class="panel-list">
-                <li><strong>Linux Operating System</strong> (FUSE kernel driver support is native to Linux)</li>
-                <li><strong>Python 3.10 or higher</strong> installed</li>
-                <li><strong>MySQL, MariaDB</strong> (or a free cloud TiDB database to sync between multiple computers)</li>
-                <li>FUSE package installed (<code style="background: rgba(255,255,255,0.05); padding: 2px 4px; border-radius: 4px;">sudo apt install fuse</code> on Ubuntu/Debian)</li>
-            </ul>
-        </div>
+        <!-- What is it? -->
+        <section aria-labelledby="what-heading">
+            <article class="card" style="text-align: center;">
+                <h2 id="what-heading">What is BloxDrive?</h2>
+                <p style="text-align: left; margin-left: auto; margin-right: auto;">
+                    Instead of paying for Google Drive or Dropbox, BloxDrive stores your files
+                    <strong>free forever</strong> — using Roblox as a backend.
+                </p>
+                <p style="text-align: left; margin-left: auto; margin-right: auto;">
+                    It splits your files into small encrypted chunks, hides them inside Roblox image decals using steganography,
+                    and uploads them silently to Roblox's servers. To you, it looks and works like a normal folder
+                    on your Linux desktop — just drag, drop, and done.
+                </p>
+                <p style="text-align: left; margin-left: auto; margin-right: auto; margin-bottom: 0;">
+                    Nobody — not even Roblox — can read your files. Everything is encrypted on
+                    <em>your</em> computer before it ever touches the internet.
+                </p>
+            </article>
+        </section>
 
-        <div class="panel">
-            <div class="panel-title" style="color: #34d399;">Why Use It?</div>
-            <ul class="panel-list">
-                <li><strong>100% Free</strong>: No subscriptions, no storage caps.</li>
-                <li><strong>Completely Private</strong>: Files are encrypted with AES-256 before leaving your computer. Nobody (not even Roblox) can see what you store.</li>
-                <li><strong>RAID-5 Protection</strong>: Link multiple accounts. If one gets banned, your files are automatically restored without losing a byte.</li>
-                <li><strong>Bypass Limits</strong>: Clever chunking prevents Roblox from auto-resizing your data files.</li>
-            </ul>
-        </div>
-    </div>
+        <!-- Requirements + Why -->
+        <section aria-labelledby="req-why-heading">
+            <h2 id="req-why-heading" class="visually-hidden">Requirements and benefits</h2>
+            <div class="two-col">
 
-    <div class="intro-card" style="margin-bottom: 0;">
-        <h2>Quick Launch Guide</h2>
-        <p>Ready to start? Bypassing tech jargon, here is exactly how you launch your virtual drive:</p>
-        
-        <div class="step-list">
-            <div class="step-item">
-                <div class="step-number">1</div>
-                <div class="step-desc">
-                    <h3>Install dependencies</h3>
-                    <p>Open your terminal and run the quick installer:</p>
-                    <div class="code-box">bash quickinstall.sh</div>
-                </div>
+                <article class="card" aria-labelledby="req-heading">
+                    <h2 id="req-heading" class="text-blue">🖥️ PC Requirements</h2>
+                    <ul class="feature-list" aria-label="System requirements">
+                        <li><span class="feat-icon" aria-hidden="true">🐧</span><span><strong>Linux</strong> — Ubuntu, Debian, Arch, or any modern distro</span></li>
+                        <li><span class="feat-icon" aria-hidden="true">🐍</span><span><strong>Python 3.10</strong> or newer</span></li>
+                        <li><span class="feat-icon" aria-hidden="true">🗄️</span><span><strong>MySQL or MariaDB</strong> — or free <a href="https://tidbcloud.com/" target="_blank" rel="noopener noreferrer">TiDB Serverless</a> for multi-device sync</span></li>
+                        <li><span class="feat-icon" aria-hidden="true">📦</span><span>FUSE driver: <code class="code">sudo apt install fuse</code></span></li>
+                        <li><span class="feat-icon" aria-hidden="true">🎮</span><span>A free <strong>Roblox account</strong> with API access</span></li>
+                    </ul>
+                </article>
+
+                <article class="card" aria-labelledby="why-heading">
+                    <h2 id="why-heading" class="text-green">✅ Why BloxDrive?</h2>
+                    <ul class="feature-list" aria-label="Key benefits">
+                        <li><span class="feat-icon" aria-hidden="true">🆓</span><span><strong>100% free</strong> — no subscriptions, no monthly fees, ever.</span></li>
+                        <li><span class="feat-icon" aria-hidden="true">🔐</span><span><strong>Private by design</strong> — AES-256-GCM runs locally before upload.</span></li>
+                        <li><span class="feat-icon" aria-hidden="true">🛡️</span><span><strong>RAID-5 protection</strong> — survive an account ban with zero data loss.</span></li>
+                        <li><span class="feat-icon" aria-hidden="true">📱</span><span><strong>Mobile Web UI</strong> — stream files to your phone over Wi-Fi.</span></li>
+                        <li><span class="feat-icon" aria-hidden="true">⚡</span><span><strong>CDN-speed downloads</strong> — served from Roblox's global edge network.</span></li>
+                    </ul>
+                </article>
+
             </div>
-            
-            <div class="step-item">
-                <div class="step-number">2</div>
-                <div class="step-desc">
-                    <h3>Configure your Database</h3>
-                    <p>Fill out database fields in <code style="color:#f3f4f6;">settings.json</code>, then initialize the database structure:</p>
-                    <div class="code-box">python3 src/main.py db init</div>
-                </div>
-            </div>
+        </section>
 
-            <div class="step-item">
-                <div class="step-number">3</div>
-                <div class="step-desc">
-                    <h3>Mount and use your storage</h3>
-                    <p>Run the drive mount script. It will ask for your Roblox credentials on first start:</p>
-                    <div class="code-box">./bloxdrive.sh start</div>
-                    <p style="margin-top:0.5rem; font-size:0.9rem; color:var(--text-muted);">You can now access your infinite drive at <code style="color:#f3f4f6;">/tmp/bloxdrive_mnt</code>!</p>
-                </div>
-            </div>
-        </div>
-    </div>
+        <!-- Quick Start -->
+        <section aria-labelledby="start-heading">
+            <article class="card">
+                <h2 id="start-heading">🚀 Up and Running in 2 Steps</h2>
+                <p>Clone the repo first, then two commands and you're done:</p>
+                <p class="text-sm text-muted">
+                    <code class="code">git clone https://github.com/domedav/BloxDrive.git &amp;&amp; cd BloxDrive</code>
+                </p>
 
+                <ol class="steps" aria-label="Setup steps">
+                    <li class="step">
+                        <div class="step-num" aria-label="Step 1">1</div>
+                        <div class="step-body">
+                            <h3>Install all dependencies</h3>
+                            <p>Run the quick installer — it handles every Python package automatically:</p>
+                            <code class="code">bash quickinstall.sh</code>
+                        </div>
+                    </li>
+
+                    <li class="step">
+                        <div class="step-num" aria-label="Step 2">2</div>
+                        <div class="step-body">
+                            <h3>Launch your drive</h3>
+                            <p>
+                                On the very first run, BloxDrive will interactively ask for your Roblox API key and User ID.
+                                No config file editing needed.
+                            </p>
+                            <code class="code">./bloxdrive.sh start</code>
+                            <p class="mt-sm text-sm text-muted">
+                                Your drive is live at <code class="code">/tmp/bloxdrive_mnt</code> —
+                                open it in your file manager and drag files in!
+                            </p>
+                        </div>
+                    </li>
+                </ol>
+            </article>
+        </section>
+
+        <!-- Advanced: RAID + Recovery -->
+        <section aria-labelledby="raid-heading">
+            <article class="card" aria-labelledby="raid-heading">
+                <h2 id="raid-heading">🛡️ RAID-5 Redundancy &amp; Recovery</h2>
+                <p>
+                    Want to protect your data even if Roblox bans one of your accounts?
+                    BloxDrive supports <strong>RAID-5 multi-account redundancy</strong> — files are striped
+                    across accounts with XOR parity, so losing one account loses <em>nothing</em>.
+                </p>
+
+                <div class="raid-grid" role="list" aria-label="RAID setup options">
+                    <div class="raid-block" role="listitem">
+                        <h3 class="text-green">➕ Add an Account</h3>
+                        <p>Link another Roblox account to your pool:</p>
+                        <code class="code">./bloxdrive.sh raid add</code>
+                        <p class="mt-sm text-xs text-muted">You can also add accounts through the Web UI RAID Settings.</p>
+                    </div>
+
+                    <div class="raid-block" role="listitem">
+                        <h3 class="text-blue">🔄 Protect Existing Files</h3>
+                        <p>Migrate files uploaded before RAID was set up:</p>
+                        <code class="code">./bloxdrive.sh raid protect</code>
+                        <p class="mt-sm text-xs text-muted">Scans all files and re-uploads them with full RAID-5 parity.</p>
+                    </div>
+                </div>
+
+                <div class="raid-recover">
+                    <h3 class="text-red">🆘 Recovering After a Ban</h3>
+                    <p>
+                        If an account gets banned, BloxDrive reconstructs the missing data from XOR parity
+                        and re-uploads it to a healthy account automatically:
+                    </p>
+                    <code class="code">./bloxdrive.sh raid recover</code>
+                    <p class="mt-sm text-xs text-muted">
+                        Check your pool health anytime: <code class="code">./bloxdrive.sh raid status</code>
+                    </p>
+                </div>
+            </article>
+        </section>
+
+        <!-- Full Features -->
+        <section aria-labelledby="features-heading">
+            <article class="card" aria-labelledby="features-heading">
+                <h2 id="features-heading">✨ Full Feature Overview</h2>
+                <ul class="feature-list" aria-label="All features">
+                    <li><span class="feat-icon" aria-hidden="true">♾️</span><span><strong>Effectively limitless storage</strong> — Roblox has per-asset size limits, but BloxDrive splits your files into small chunks that each fit within those limits, giving you practically unlimited space.</span></li>
+                    <li><span class="feat-icon" aria-hidden="true">🔒</span><span><strong>AES-256-GCM encryption</strong> — only you hold the key.</span></li>
+                    <li><span class="feat-icon" aria-hidden="true">📁</span><span><strong>Native FUSE filesystem</strong> — works with every Linux app, no special client needed.</span></li>
+                    <li><span class="feat-icon" aria-hidden="true">📲</span><span><strong>Mobile Web UI</strong> — built-in async web file manager for phone access.</span></li>
+                    <li><span class="feat-icon" aria-hidden="true">🔁</span><span><strong>Convergent deduplication</strong> — identical files are stored once, saving bandwidth.</span></li>
+                    <li><span class="feat-icon" aria-hidden="true">🌐</span><span><strong>Multi-device sync</strong> — use TiDB Serverless (free) to share files across computers.</span></li>
+                    <li><span class="feat-icon" aria-hidden="true">🛡️</span><span><strong>RAID-5 redundancy</strong> — survive a single account ban with zero data loss.</span></li>
+                    <li><span class="feat-icon" aria-hidden="true">🕵️</span><span><strong>LSB steganography</strong> — each encrypted chunk is embedded into the lowest 2 bits of a randomised gradient PNG, hiding binary data inside an innocent-looking image that bypasses moderation AI.</span></li>
+                    <li><span class="feat-icon" aria-hidden="true">🎲</span><span><strong>Random asset names</strong> — every upload is given a random 8–12 word Faker-generated name, so your real file names are never exposed in your Roblox inventory.</span></li>
+                </ul>
+            </article>
+        </section>
+
+    </main>
+
+    <!-- ════ FOOTER ════ -->
     <footer>
-        <p>BloxDrive is open-source. Check out our <a href="https://github.com/domedav/BloxDrive" target="_blank">GitHub Repository</a>.</p>
+        <p>BloxDrive is free and open-source software released under the MIT License.</p>
+        <nav aria-label="Footer links">
+            <a href="https://github.com/domedav/BloxDrive" target="_blank" rel="noopener noreferrer">GitHub</a>
+            &nbsp;·&nbsp;
+            <a href="https://github.com/domedav/BloxDrive/releases" target="_blank" rel="noopener noreferrer">Releases</a>
+            &nbsp;·&nbsp;
+            <a href="https://github.com/domedav/BloxDrive/blob/master/SETUP.md" target="_blank" rel="noopener noreferrer">Setup Guide</a>
+        </nav>
+        <p class="text-xs" style="margin-top: 0.5rem;">Made with ❤️ by <a href="https://github.com/domedav" target="_blank" rel="noopener noreferrer">domedav</a></p>
     </footer>
+
+    <!-- Visually hidden utility (used for sr-only headings) -->
+    <style>
+        .visually-hidden {
+            position: absolute;
+            width: 1px; height: 1px;
+            padding: 0; margin: -1px;
+            overflow: hidden;
+            clip: rect(0,0,0,0);
+            white-space: nowrap;
+            border: 0;
+        }
+    </style>
 
 </body>
 </html>
